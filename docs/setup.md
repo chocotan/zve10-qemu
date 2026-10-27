@@ -22,19 +22,7 @@ mkdir -p work
 
 支持的是 **ZV-E10 2.03 macOS 更新包 `Update_ZVE10V203.dmg`**。它只作为数据文件使用，不需要运行 Sony 更新器。
 
-先从 DMG 中取出 `FirmwareData_ZVE10V203.dat`：
-
-```bash
-7z x Update_ZVE10V203.dmg -owork/update
-```
-
-文件位于解出的 `SystemSoftwareUpdater.app/Contents/Resources/` 下；具体上一层目录可用以下命令查看：
-
-```bash
-find work/update -name FirmwareData_ZVE10V203.dat
-```
-
-使用 [fwtool.py](https://github.com/DavidBuchanan314/fwtool.py) 解包该 DAT。该工具和它的依赖单独安装，不包含在本仓库：
+解包工具 [fwtool.py](https://github.com/DavidBuchanan314/fwtool.py) 及其依赖不包含在本仓库，需要单独安装：
 
 ```bash
 git clone https://github.com/DavidBuchanan314/fwtool.py work/fwtool
@@ -42,14 +30,15 @@ python3 -m venv work/fwtool-venv
 work/fwtool-venv/bin/pip install pyyaml pycryptodome
 ```
 
-将下面的 `/path/to/FirmwareData_ZVE10V203.dat` 换成刚找到的路径：
+然后运行本仓库的解包脚本。它会校验更新包版本、取出固件镜像、解密解包，并把相机文件系统放到 `work/rootfs`、`work/usr`、`work/boot`，设置放到 `work/setting` 和 `work/tmp`：
 
 ```bash
-work/fwtool-venv/bin/python work/fwtool/fwtool.py unpack \
-  -f /path/to/FirmwareData_ZVE10V203.dat -o work/unpacked
+python3 scripts/prepare-firmware.py --fwtool-python work/fwtool-venv/bin/python
 ```
 
-fwtool 会得到 `firmware.tar` 及其解包目录。将其中包含 `0100_config`、`0110_backup`、`0700_part_image`、`0800_appli` 的目录放在 `work/firmware-root/`。
+默认读取仓库根目录的 `Update_ZVE10V203.dmg`，并在 `work/fwtool/fwtool.py` 查找 fwtool。如果放在别处，加上 `--dmg` 和 `--fwtool` 参数。中间解包目录默认保留；加 `--keep-intermediate` 会一并保留从 DMG 取出的临时文件。
+
+脚本不会执行固件里的任何程序，也不会刷写相机。
 
 固件里的主要内容如下：
 
@@ -62,19 +51,14 @@ fwtool 会得到 `firmware.tar` 及其解包目录。将其中包含 `0100_confi
 | `0800_appli/tmp` | 字体、配置等运行文件 | 复制到启动文件系统的 `/tmp` |
 | `0110_backup/SYSASTRA-DSLR/RK/CX88701_ALLLANG.bin` | 固件自带设置模板 | 复制为 `/setting/Backup.bin` 和 `Backup.bak` |
 
-不需要挂载这些分区。FAT 可用 `7z x` 解出；ext2 可用 `debugfs -R 'rdump / 目标目录' 分区文件` 解出。`debugfs` 提取设备文件时需要相应权限，可在 `fakeroot` 会话中完成提取和 cpio 打包。
-
-例如：
+解包脚本会用 `7z` 解开 FAT 分区、用 `debugfs rdump` 解开 ext2 分区，保留原始符号链接、权限和设备节点。启动模块来自启动分区里的 `initrd.img`，需要时单独解出：
 
 ```bash
-mkdir -p work/boot work/rootfs work/usr work/initrd
-7z x work/firmware-root/0700_part_image/dev/nflasha3 -owork/boot
-debugfs -R "rdump / work/rootfs" work/firmware-root/0700_part_image/dev/nflasha7
-debugfs -R "rdump / work/usr" work/firmware-root/0700_part_image/dev/nflasha15
+mkdir -p work/initrd
 debugfs -R "rdump / work/initrd" work/boot/initrd.img
 ```
 
-需要保留原始符号链接、文件权限、设备节点及目录结构。不要在 Windows 文件系统上展开后再直接当作相机根目录。
+不要在 Windows 文件系统上展开后再直接当作相机根目录，权限和设备节点会丢失。
 
 ## 3. 准备工具链和启动文件系统
 
@@ -184,4 +168,17 @@ cc -std=gnu11 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined \
 python3 tests/test-capture-headless.py
 ```
 
-`test-zve10-lz77.c` 和 `test-zve10-image-decode.c` 的原厂图片用例需要从使用者自己的固件提取测试数据。这些图片数据不随仓库分发；仅编译这两个测试并不代表其固件用例可以在没有下载固件的环境运行。
+`test-zve10-lz77.c` 和 `test-zve10-image-decode.c` 的原厂图片用例需要从使用者自己的固件提取测试数据。这些图片数据不随仓库分发；缺少数据时这两个测试会输出 `SKIP` 并正常退出，有了数据再运行会执行完整用例。`check-runtime-evidence.py` 同样需要本地保存的运行日志。
+
+`thread-join.c` 需要在启动后的相机系统里编译运行，用于验证线程退出和 `pthread_join`。它不是宿主测试，不能在没有内核和根文件系统时运行。
+
+## 构建验证
+
+本仓库的 QEMU 补丁和内核补丁在官方归档上做过完整验证：
+
+- QEMU 11.1.2 官方源码应用 `source/qemu/0001-register-zve10.patch` 后可以配置和编译，`-M zve10` 正确注册。
+- Sony Linux 3.0.27 官方源码应用 `source/kernel/0001-zve10-qemu.patch` 的 40 个文件全部干净应用，用 `zve10_defconfig` 编译得到 `Image` 和 19 个模块。
+- `scripts/prepare-firmware.py` 从官方 2.03 更新包解出的 `work/rootfs` 和 `work/usr` 与已验证可启动的版本逐文件一致。
+- 用上述新构建的 QEMU 和新编译的内核实际启动，能进入 BusyBox `/ #` 命令行。也就是说，从官方归档开始按本文档操作可以得到可运行的模拟器。
+
+这些验证使用 GCC 9.3.0 交叉工具链和官方 QEMU 11.1.2，换用其他版本可能需要在 `source/` 的补丁上做调整。
