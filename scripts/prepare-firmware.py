@@ -77,7 +77,7 @@ def unpack_firmware(dat, fwtool, python, out):
     roots = [p for p in out.rglob('0700_part_image') if p.is_dir()]
     if len(roots) != 1:
         sys.exit(f'expected one 0700_part_image in {out}, found {len(roots)}')
-    return roots[0].parents[1] if roots[0].parent.name == 'dev' else roots[0].parent
+    return roots[0].parent
 
 
 def extract_partition(image, kind, dest):
@@ -120,6 +120,9 @@ def main():
         need(command)
 
     WORK.mkdir(exist_ok=True)
+    for name in ('rootfs', 'usr', 'boot', 'setting', 'tmp'):
+        if (WORK / name).exists():
+            sys.exit(f'work/{name} already exists; keep or rename it before unpacking a fresh copy')
     dmg_out = WORK / 'update'
     fw_out = WORK / 'unpacked'
 
@@ -146,6 +149,16 @@ def main():
     (WORK / 'setting').mkdir(parents=True, exist_ok=True)
     for name in ('Backup.bin', 'Backup.bak'):
         shutil.copyfile(backup, WORK / 'setting' / name)
+
+    required = ('rootfs/bin/busybox', 'rootfs/kmod/devno.ko', 'rootfs/kmod/dmac.ko',
+                'usr/bin/bootin.elf', 'usr/bin/im.elf', 'usr/lib/libIMDB.so',
+                'boot/initrd.img', 'setting/DmmConfig.bin')
+    for name in required:
+        if not (WORK / name).is_file():
+            sys.exit(f'incomplete extraction: work/{name} is missing')
+    library = WORK / 'usr/lib/libObj.so'
+    if not library.is_file() or sha256(library) != 'cfdc59b94fa56116e9d99154ca03a2c1aaf6039dd272679b78b0b76e21c722ac':
+        sys.exit('extracted libObj.so does not match the supported ZV-E10 2.03 build')
 
     if not args.keep_intermediate:
         shutil.rmtree(dmg_out, ignore_errors=True)

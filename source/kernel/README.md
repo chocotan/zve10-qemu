@@ -73,5 +73,8 @@ both passed against a fresh extraction of the pinned archive. All 19,720 regular
 archive files other than `.config` then matched the existing working kernel,
 as did the added GCC 9 header. `savedefconfig` and `oldnoconfig` completed using
 that patched extraction; restoring the initramfs path reproduced the original
-verified full config byte-for-byte. A full rebuild of this packaged source has
-not been run. Existing kernel build directories were not modified.
+verified full config byte-for-byte. A subsequent full `Image modules` build with
+the documented GCC 9.3.0 toolchain produced the kernel and 19 modules. With a
+newly extracted and assembled firmware filesystem and a fresh QEMU 11.1.2 build,
+that kernel booted to the BusyBox shell and ran the original menu capture.
+Existing working kernel build directories were not modified.

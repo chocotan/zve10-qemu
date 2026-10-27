@@ -26,6 +26,7 @@ mkdir -p work
 
 ```bash
 git clone https://github.com/DavidBuchanan314/fwtool.py work/fwtool
+git -C work/fwtool checkout cdba742b73eed5981480c326aeb30033aabf0223
 python3 -m venv work/fwtool-venv
 work/fwtool-venv/bin/pip install pyyaml pycryptodome
 ```
@@ -36,7 +37,9 @@ work/fwtool-venv/bin/pip install pyyaml pycryptodome
 python3 scripts/prepare-firmware.py --fwtool-python work/fwtool-venv/bin/python
 ```
 
-默认读取仓库根目录的 `Update_ZVE10V203.dmg`，并在 `work/fwtool/fwtool.py` 查找 fwtool。如果放在别处，加上 `--dmg` 和 `--fwtool` 参数。中间解包目录默认保留；加 `--keep-intermediate` 会一并保留从 DMG 取出的临时文件。
+默认读取仓库根目录的 `Update_ZVE10V203.dmg`，并在 `work/fwtool/fwtool.py` 查找 fwtool。如果放在别处，加上 `--dmg` 和 `--fwtool` 参数。上面固定的是已检查过兼容性的 fwtool 版本。中间解包目录默认保留；加 `--keep-intermediate` 会一并保留从 DMG 取出的临时文件。
+
+脚本不覆盖已有的 `work/rootfs`、`work/usr` 等提取目录。需要重新解包时，请先保留或重命名这些目录。
 
 脚本不会执行固件里的任何程序，也不会刷写相机。
 
@@ -51,7 +54,7 @@ python3 scripts/prepare-firmware.py --fwtool-python work/fwtool-venv/bin/python
 | `0800_appli/tmp` | 字体、配置等运行文件 | 复制到启动文件系统的 `/tmp` |
 | `0110_backup/SYSASTRA-DSLR/RK/CX88701_ALLLANG.bin` | 固件自带设置模板 | 复制为 `/setting/Backup.bin` 和 `Backup.bak` |
 
-解包脚本会用 `7z` 解开 FAT 分区、用 `debugfs rdump` 解开 ext2 分区，保留原始符号链接、权限和设备节点。启动模块来自启动分区里的 `initrd.img`，需要时单独解出：
+解包脚本会用 `7z` 解开 FAT 分区、用 `debugfs rdump` 解开 ext2 分区。普通用户无法恢复原始文件所有者，脚本会提示；启动时所需的控制台设备节点在下一节统一生成。根文件系统本身已包含 `/kmod`。如果要单独查看启动分区中的 `initrd.img`，可运行：
 
 ```bash
 mkdir -p work/initrd
@@ -69,28 +72,19 @@ export CROSS_COMPILE="$PWD/work/armv7-eabihf--glibc--stable-2020.08-1/bin/arm-li
 
 启动器默认使用上述工具链位置。构建过的内核是 GCC 9.3.0 版本，不建议直接换成宿主机最新的 ARM GCC。
 
-准备两个根目录：
-
-- `work/initramfs-camera/`：以 `work/rootfs/` 为基础，加入 `work/initrd/kmod/`，用于命令行启动。
-- `work/initramfs-ui/`：同样以 `work/rootfs/` 为基础，加入 `work/usr/` 的内容到 `/usr`、`work/initrd/kmod/` 到 `/kmod`，并加入上一节的 `/setting` 和 `/tmp`。
-
-命令行启动的 `/init` 由本仓库源码编译：
+运行启动文件系统组装脚本：
 
 ```bash
-"${CROSS_COMPILE}gcc" -nostdlib -static -Os -fomit-frame-pointer \
-  -fno-stack-protector -Wl,-e,_start \
-  -o work/initramfs-camera/init source/initramfs/init-shell.c
-cp source/initramfs/init-ui.sh work/initramfs-ui/init
-chmod +x work/initramfs-ui/init
+fakeroot -s work/fakeroot.state python3 scripts/prepare-initramfs.py
 ```
 
-在两个根目录里准备 `/dev/ttyAM0`（字符设备 `204:16`）、`/dev/console`（`5:1`）、`/dev/null`（`1:3`）和 `/dev/kmsg`（`1:11`）。必须保留 `/proc`、`/sys`、`/dev`、`/tmp` 目录，并移除固件中可能已有的 `/etc/ld.so.preload`。不要删除 `/usr/lib` 中的原厂程序。
+脚本会编译命令行的 `/init`，从解包结果组装 `work/initramfs-camera/` 和 `work/initramfs-ui/`，准备控制台设备节点，并生成 `work/camera.cpio`。UI 根目录同时包含原厂 `/usr`、启动分区里的 `/system` 文件、设置和临时字体文件。`/kmod` 已包含在提取出的根文件系统中，无需手工再复制。
 
-以 root 或同一个 `fakeroot` 会话创建节点、打包命令行文件系统：
+`fakeroot` 让普通用户也能生成设备节点。`work/fakeroot.state` 记录这些节点的信息；后续 UI 启动时会读取它重新打包。请保留这个文件，也不要只把两个根目录复制到另一处后继续使用旧状态文件。
 
-```bash
-(cd work/initramfs-camera && find . -print0 | cpio --null -o -H newc --quiet) > work/camera.cpio
-```
+脚本会拒绝覆盖已有的 `initramfs-camera/` 或 `initramfs-ui/`。重新准备前请先保留或重命名原目录，尤其是自己修改过的固件文件和设置。
+
+此时内核还没编译，所以脚本可能提示缺少 `dma330_stub.ko`。先完成下一节的内核和模块编译，再按说明把模块复制进 UI 根目录即可，不必重新组装整个目录。
 
 UI 使用外部 initramfs，启动脚本会重新打包它。界面加载配置由 `scripts/prepare-ui-profile.py` 从原厂库创建副本，原始 `work/usr/lib/libIMDB.so` 保持不变。
 
@@ -170,7 +164,16 @@ python3 tests/test-capture-headless.py
 
 `test-zve10-lz77.c` 和 `test-zve10-image-decode.c` 的原厂图片用例需要从使用者自己的固件提取测试数据。这些图片数据不随仓库分发；缺少数据时这两个测试会输出 `SKIP` 并正常退出，有了数据再运行会执行完整用例。`check-runtime-evidence.py` 同样需要本地保存的运行日志。
 
-`thread-join.c` 需要在启动后的相机系统里编译运行，用于验证线程退出和 `pthread_join`。它不是宿主测试，不能在没有内核和根文件系统时运行。
+`thread-join.c` 需用 ARM 交叉工具链编译，并在启动后的相机系统里运行，用于验证线程退出和 `pthread_join`。
+
+准备流程也有独立测试，不需要固件：
+
+```bash
+python3 tests/test-prepare-firmware.py
+python3 tests/test-prepare-initramfs.py
+```
+
+前者检查更新包、DAT 和解包错误处理；后者检查归档包含文件、符号链接和设备节点，验证已有目录不会被清空，并确认保存的 fakeroot 信息能用于后续重新打包。
 
 ## 构建验证
 
@@ -179,6 +182,6 @@ python3 tests/test-capture-headless.py
 - QEMU 11.1.2 官方源码应用 `source/qemu/0001-register-zve10.patch` 后可以配置和编译，`-M zve10` 正确注册。
 - Sony Linux 3.0.27 官方源码应用 `source/kernel/0001-zve10-qemu.patch` 的 40 个文件全部干净应用，用 `zve10_defconfig` 编译得到 `Image` 和 19 个模块。
 - `scripts/prepare-firmware.py` 从官方 2.03 更新包解出的 `work/rootfs` 和 `work/usr` 与已验证可启动的版本逐文件一致。
-- 用上述新构建的 QEMU 和新编译的内核实际启动，能进入 BusyBox `/ #` 命令行。也就是说，从官方归档开始按本文档操作可以得到可运行的模拟器。
+- 用新解包的固件、`prepare-initramfs.py` 新组装的文件系统，以及上述新构建的 QEMU、内核和模块，分别启动到 BusyBox `/ #`，并导出包含图标、文字及设置条目的 640×480 原厂菜单。截图使用普通用户保存的 fakeroot 信息打包，不需要管理员权限。
 
 这些验证使用 GCC 9.3.0 交叉工具链和官方 QEMU 11.1.2，换用其他版本可能需要在 `source/` 的补丁上做调整。

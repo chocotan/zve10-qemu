@@ -17,7 +17,7 @@
 
 ## 第一次启动前
 
-需要 Linux x86_64、Python 3、Pillow、GCC、Make、Ninja、Meson、cpio、7-Zip 和 e2fsprogs。编译 QEMU 还需要 GLib 和 Pixman 开发包，编译相机内核和绘图程序需要 ARM 交叉工具链。
+需要 Linux x86_64、Python 3、Pillow、GCC、Make、Ninja、Meson、cpio、7-Zip、e2fsprogs 和 fakeroot。编译 QEMU 还需要 GLib 和 Pixman 开发包，编译相机内核和绘图程序需要 ARM 交叉工具链。
 
 固件、Linux 源码和工具链需要自行下载，仓库不包含这些大文件。
 
@@ -46,7 +46,14 @@ zve10-qemu/
     └── initramfs-ui/
 ```
 
-Linux 和 QEMU 需要应用本项目的修改后编译。固件解包、源码位置和编译说明见 [准备与编译](docs/setup.md)。
+安装好依赖、解包工具和 ARM 工具链后，用以下两个命令准备固件和启动文件系统：
+
+```bash
+python3 scripts/prepare-firmware.py --fwtool-python work/fwtool-venv/bin/python
+fakeroot -s work/fakeroot.state python3 scripts/prepare-initramfs.py
+```
+
+接下来应用内核与 QEMU 补丁、编译内核和本地模块。完整步骤见 [准备与编译](docs/setup.md)。这套流程已从下载的源码和更新包跑通，能启动到命令行并生成上图的菜单。
 
 ## 运行
 
