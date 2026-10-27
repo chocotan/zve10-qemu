@@ -1,0 +1,544 @@
+--- a/arch/arm/kernel/vmlinux.lds.S
++++ b/arch/arm/kernel/vmlinux.lds.S
+@@ -184,7 +184,6 @@
+ 		DEFERRED_INITCALLS
+ 		CON_INITCALL
+ 		SECURITY_INITCALL
+-		INIT_RAM_FS
+ 	}
+ #ifndef CONFIG_XIP_KERNEL
+ 	.exit.data : {
+@@ -244,6 +243,9 @@
+ 
+ 		_edata = .;
+ 	} :data
++	.init.ramfs : AT(ADDR(.init.ramfs) - LOAD_OFFSET) {
++		INIT_RAM_FS
++	}
+ 	_edata_loc = __data_loc + SIZEOF(.data);
+ 
+ #ifdef CONFIG_HAVE_TCM
+--- a/arch/arm/boot/bootp/init.S
++++ b/arch/arm/boot/bootp/init.S
+@@ -16,7 +16,7 @@
+  *  size immediately following the kernel, we could build this into
+  *  a binary blob, and concatenate the zImage using the cat command.
+  */
+-		.section .start,#alloc,#execinstr
++		.section .start, "ax"
+ 		.type	_start, #function
+ 		.globl	_start
+ 
+--- a/arch/arm/boot/compressed/big-endian.S
++++ b/arch/arm/boot/compressed/big-endian.S
+@@ -5,7 +5,7 @@
+  *  Author: Nicolas Pitre
+  */
+ 
+-	.section ".start", #alloc, #execinstr
++	.section ".start", "ax"
+ 
+ 	mrc	p15, 0, r0, c1, c0, 0	@ read control reg
+ 	orr	r0, r0, #(1 << 7)	@ enable big endian mode
+--- a/arch/arm/boot/compressed/piggy.lzo.S
++++ b/arch/arm/boot/compressed/piggy.lzo.S
+@@ -1,4 +1,4 @@
+-	.section .piggydata,#alloc
++	.section .piggydata,"a"
+ 	.globl	input_data
+ input_data:
+ 	.incbin	"arch/arm/boot/compressed/piggy.lzo"
+--- a/arch/arm/boot/compressed/piggy.lzma.S
++++ b/arch/arm/boot/compressed/piggy.lzma.S
+@@ -1,4 +1,4 @@
+-	.section .piggydata,#alloc
++	.section .piggydata,"a"
+ 	.globl	input_data
+ input_data:
+ 	.incbin	"arch/arm/boot/compressed/piggy.lzma"
+--- a/arch/arm/boot/compressed/piggy.gzip.S
++++ b/arch/arm/boot/compressed/piggy.gzip.S
+@@ -1,4 +1,4 @@
+-	.section .piggydata,#alloc
++	.section .piggydata,"a"
+ 	.globl	input_data
+ input_data:
+ 	.incbin	"arch/arm/boot/compressed/piggy.gzip"
+--- a/arch/arm/boot/compressed/head.S
++++ b/arch/arm/boot/compressed/head.S
+@@ -113,7 +113,7 @@
+ #endif
+ 		.endm
+ 
+-		.section ".start", #alloc, #execinstr
++		.section ".start", "ax"
+ /*
+  * sort out different calling conventions
+  */
+--- a/arch/arm/mach-cxd900x0/boot.S
++++ b/arch/arm/mach-cxd900x0/boot.S
+@@ -123,6 +123,7 @@
+ 
+ ENTRY(ej_head_init)
+ 	mov	r8, lr			@ save lr
++	mov	r12, r2			@ UART/cache/SMP setup clobber r6, but preserve r12
+ 
+ 	@ turn off coherency
+ 	mrc	p15, 0, r0, c1, c0, 1	@ aux
+@@ -179,7 +180,7 @@
+ 
+ 	mov	r0, #0
+ 	ldr	r1, =MACH_TYPE_CXD900X0
+-	mov	r2, #0xffffffff		@ atags pointer
++	mov	r2, r12			@ restore bootloader ATAGS/DTB pointer
+ 
+ 	mov	pc, r8
+ ENDPROC(ej_head_init)
+--- a/arch/arm/mach-cxd900x0/adrs_conv.c
++++ b/arch/arm/mach-cxd900x0/adrs_conv.c
+@@ -164,9 +164,10 @@
+ {
+ 	if (pass_through(pa))
+ 		return pa;
+-	if (likely(pa_uc[0] <= pa && pa < DDR0_END)) {
++	/* shortcut: treat all DDR as uncached; LIRO needs noncached aliases */
++	if (likely(DDR0_BASE <= pa && pa < DDR0_END)) {
+ 		return pa + VA_DDR0;
+-	} else if (likely(pa_uc[1] <= pa && pa < DDR1_END)) {
++	} else if (likely(DDR1_BASE <= pa && pa < DDR1_END)) {
+ 		return pa - DDR1_BASE + VA_DDR1;
+ 	} else if (ESRAM_BASE <= pa && pa < ESRAM_END) {
+ 		return pa;
+--- a/arch/arm/mach-cxd900x0/subsystem.c
++++ b/arch/arm/mach-cxd900x0/subsystem.c
+@@ -68,6 +68,7 @@
+ #include <asm/io.h>
+ #include <asm/mach/irq.h>
+ #include <mach/gic.h>
++#include <mach/gic_export.h>
+ #include <mach/hardware.h>
+ 
+ static void set_affinity(unsigned int irq, int cpu_id)
+--- a/arch/arm/mach-cxd900x0/cxd900x0.c
++++ b/arch/arm/mach-cxd900x0/cxd900x0.c
+@@ -264,6 +264,18 @@
+ 	.irq = { IRQ_UART3, },
+ };
+ 
++static struct amba_device mmci_device = {
++	.dev = {
++		.init_name = "mmci",
++	},
++	.res = {
++		.start = 0xf1005000,
++		.end   = 0xf1005fff,
++		.flags = IORESOURCE_MEM,
++	},
++	.irq = { 41 },
++};
++
+ static struct amba_device *uart_devs[] __initdata = {
+ 	&uart0_device,
+ 	&uart1_device,
+@@ -509,6 +521,10 @@
+ 			}
+ 		}
+ 	}
++	/* zve10-qemu: PL181 SD card provides the camera /usr and /system tree. */
++	ret = amba_device_register(&mmci_device, &iomem_resource);
++	if (ret)
++		printk(KERN_ERR "cxd900x0_init: mmci registration failed\n");
+ 	platform_device_register(&pmu_device);
+ 
+ #if !defined(CONFIG_CXD900X0_QEMU)
+@@ -540,6 +556,7 @@
+ 
+ MACHINE_START(CXD900X0, "ARM-CXD900X0")
+ 	/* Maintainer: Sony Corporation */
++	.boot_params	= 0x00000100, /* zve10-qemu: QEMU ATAGS */
+ 	.map_io		= cxd900x0_map_io,
+ 	.init_irq	= cxd900x0_init_irq,
+ 	.timer		= &cxd4115_timer,
+--- a/arch/arm/include/asm/system.h
++++ b/arch/arm/include/asm/system.h
+@@ -54,7 +54,7 @@
+  * will cause compilation to stop on mismatch.
+  * (for details, see gcc PR 15089)
+  */
+-#define __asmeq(x, y)  ".ifnc " x "," y " ; .err ; .endif\n\t"
++#define __asmeq(x, y) "\t.ifnc " x "," y "\n\t.err\n\t.endif\n"
+ 
+ #ifndef __ASSEMBLY__
+ 
+--- a/arch/arm/include/asm/uaccess.h
++++ b/arch/arm/include/asm/uaccess.h
+@@ -167,7 +167,7 @@
+ #define put_user(x,p)							\
+ 	({								\
+ 		unsigned long __limit = current_thread_info()->addr_limit - 1; \
+-		register const typeof(*(p)) __r2 asm("r2") = (x);	\
++		register typeof(*(p)) __r2 asm("r2") = (x);		\
+ 		register const typeof(*(p)) __user *__p asm("r0") = (p);\
+ 		register unsigned long __l asm("r1") = __limit;		\
+ 		register int __e asm("r0");				\
+--- a/arch/arm/mm/proc-arm946.S
++++ b/arch/arm/mm/proc-arm946.S
+@@ -443,7 +443,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 	.type	__arm946_proc_info,#object
+ __arm946_proc_info:
+ 	.long	0x41009460
+--- a/arch/arm/mm/proc-arm1022.S
++++ b/arch/arm/mm/proc-arm1022.S
+@@ -481,7 +481,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm1022_proc_info,#object
+ __arm1022_proc_info:
+--- a/arch/arm/mm/proc-arm925.S
++++ b/arch/arm/mm/proc-arm925.S
+@@ -527,7 +527,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm925_proc_info,#object
+ __arm925_proc_info:
+--- a/arch/arm/mm/proc-feroceon.S
++++ b/arch/arm/mm/proc-feroceon.S
+@@ -593,7 +593,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ #ifdef CONFIG_CPU_FEROCEON_OLD_ID
+ 	.type	__feroceon_old_id_proc_info,#object
+--- a/arch/arm/mm/proc-arm1020e.S
++++ b/arch/arm/mm/proc-arm1020e.S
+@@ -498,7 +498,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm1020e_proc_info,#object
+ __arm1020e_proc_info:
+--- a/arch/arm/mm/proc-arm1020.S
++++ b/arch/arm/mm/proc-arm1020.S
+@@ -535,7 +535,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm1020_proc_info,#object
+ __arm1020_proc_info:
+--- a/arch/arm/mm/proc-arm1026.S
++++ b/arch/arm/mm/proc-arm1026.S
+@@ -477,7 +477,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm1026_proc_info,#object
+ __arm1026_proc_info:
+--- a/arch/arm/mm/proc-arm920.S
++++ b/arch/arm/mm/proc-arm920.S
+@@ -488,7 +488,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm920_proc_info,#object
+ __arm920_proc_info:
+--- a/arch/arm/mm/proc-v7.S
++++ b/arch/arm/mm/proc-v7.S
+@@ -540,7 +540,7 @@
+ 	string	cpu_elf_name, "v7"
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	/*
+ 	 * Standard v7 proc info content
+--- a/arch/arm/mm/proc-arm7tdmi.S
++++ b/arch/arm/mm/proc-arm7tdmi.S
+@@ -129,7 +129,7 @@
+ 
+ 		.align
+ 
+-		.section ".proc.info.init", #alloc, #execinstr
++		.section ".proc.info.init", "ax"
+ 
+ 		.type	__arm7tdmi_proc_info, #object
+ __arm7tdmi_proc_info:
+--- a/arch/arm/mm/proc-xscale.S
++++ b/arch/arm/mm/proc-xscale.S
+@@ -690,7 +690,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__80200_A0_A1_proc_info,#object
+ __80200_A0_A1_proc_info:
+--- a/arch/arm/mm/proc-arm922.S
++++ b/arch/arm/mm/proc-arm922.S
+@@ -460,7 +460,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm922_proc_info,#object
+ __arm922_proc_info:
+--- a/arch/arm/mm/proc-arm940.S
++++ b/arch/arm/mm/proc-arm940.S
+@@ -387,7 +387,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm940_proc_info,#object
+ __arm940_proc_info:
+--- a/arch/arm/mm/proc-xsc3.S
++++ b/arch/arm/mm/proc-xsc3.S
+@@ -541,7 +541,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__xsc3_proc_info,#object
+ __xsc3_proc_info:
+--- a/arch/arm/mm/proc-fa526.S
++++ b/arch/arm/mm/proc-fa526.S
+@@ -219,7 +219,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__fa526_proc_info,#object
+ __fa526_proc_info:
+--- a/arch/arm/mm/proc-sa110.S
++++ b/arch/arm/mm/proc-sa110.S
+@@ -227,7 +227,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__sa110_proc_info,#object
+ __sa110_proc_info:
+--- a/arch/arm/mm/proc-sa1100.S
++++ b/arch/arm/mm/proc-sa1100.S
+@@ -279,7 +279,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__sa1100_proc_info,#object
+ __sa1100_proc_info:
+--- a/arch/arm/mm/proc-arm926.S
++++ b/arch/arm/mm/proc-arm926.S
+@@ -512,7 +512,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__arm926_proc_info,#object
+ __arm926_proc_info:
+--- a/arch/arm/mm/proc-mohawk.S
++++ b/arch/arm/mm/proc-mohawk.S
+@@ -412,7 +412,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	.type	__88sv331x_proc_info,#object
+ __88sv331x_proc_info:
+--- a/arch/arm/mm/proc-v6.S
++++ b/arch/arm/mm/proc-v6.S
+@@ -270,7 +270,7 @@
+ 	string	cpu_elf_name, "v6"
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 
+ 	/*
+ 	 * Match any ARMv6 processor core.
+--- a/arch/arm/mm/proc-arm740.S
++++ b/arch/arm/mm/proc-arm740.S
+@@ -154,7 +154,7 @@
+ 
+ 	.align
+ 
+-	.section ".proc.info.init", #alloc, #execinstr
++	.section ".proc.info.init", "ax"
+ 	.type	__arm740_proc_info,#object
+ __arm740_proc_info:
+ 	.long	0x41807400
+--- a/arch/arm/mm/proc-arm6_7.S
++++ b/arch/arm/mm/proc-arm6_7.S
+@@ -283,7 +283,7 @@
+ 
+ 		.align
+ 
+-		.section ".proc.info.init", #alloc, #execinstr
++		.section ".proc.info.init", "ax"
+ 
+ .macro arm67_proc_info name:req, cpu_val:req, cpu_mask:req, cpu_name:req, \
+ 	cpu_mm_mmu_flags:req, cpu_flush:req, cpu_proc_funcs:req
+--- a/arch/arm/mm/proc-arm720.S
++++ b/arch/arm/mm/proc-arm720.S
+@@ -216,7 +216,7 @@
+  * See <asm/procinfo.h> for a definition of this structure.
+  */
+ 	
+-		.section ".proc.info.init", #alloc, #execinstr
++		.section ".proc.info.init", "ax"
+ 
+ 		.type	__arm710_proc_info, #object
+ __arm710_proc_info:
+--- a/arch/arm/mm/proc-arm9tdmi.S
++++ b/arch/arm/mm/proc-arm9tdmi.S
+@@ -99,7 +99,7 @@
+ 
+ 		.align
+ 
+-		.section ".proc.info.init", #alloc, #execinstr
++		.section ".proc.info.init", "ax"
+ 
+ 		.type	__arm9tdmi_proc_info, #object
+ __arm9tdmi_proc_info:
+--- a/fs/proc/generic.c
++++ b/fs/proc/generic.c
+@@ -580,12 +580,21 @@
+ 
+ 	spin_lock(&proc_subdir_lock);
+ 
+-	for (tmp = dir->subdir; tmp; tmp = tmp->next)
++	for (tmp = dir->subdir; tmp; tmp = tmp->next) {
++		/* zve10-qemu: this 3.0.27 tree leaves a freed PDE at the head of
++		 * proc_root.subdir; drop the stale list instead of crashing. */
++		if ((unsigned long)tmp->name < 0x60000000UL) {
++			printk(KERN_ERR "PROC_STALE dir=%s tmp=%p name=%p\n",
++			       dir->name, tmp, tmp->name);
++			dir->subdir = NULL;
++			break;
++		}
+ 		if (strcmp(tmp->name, dp->name) == 0) {
+ 			WARN(1, KERN_WARNING "proc_dir_entry '%s/%s' already registered\n",
+ 				dir->name, dp->name);
+ 			break;
+ 		}
++	}
+ 
+ 	dp->next = dir->subdir;
+ 	dp->parent = dir;
+--- a/fs/proc/root.c
++++ b/fs/proc/root.c
+@@ -132,7 +132,8 @@
+ 	proc_device_tree_init();
+ #endif
+ 	proc_mkdir("bus", NULL);
+-	proc_sys_init();
++	/* zve10-qemu: proc_sys_init corrupts proc_root.subdir on this kernel/config. */
++	/* proc_sys_init(); */
+ }
+ 
+ static int proc_root_getattr(struct vfsmount *mnt, struct dentry *dentry, struct kstat *stat
+--- /dev/null
++++ b/include/linux/compiler-gcc9.h
+@@ -0,0 +1,57 @@
++#ifndef __LINUX_COMPILER_H
++#error "Please don't include <linux/compiler-gcc4.h> directly, include <linux/compiler.h> instead."
++#endif
++
++/* GCC 4.1.[01] miscompiles __weak */
++#ifdef __KERNEL__
++# if __GNUC_MINOR__ == 1 && __GNUC_PATCHLEVEL__ <= 1
++#  error Your version of gcc miscompiles the __weak directive
++# endif
++#endif
++
++#define __used			__attribute__((__used__))
++#define __must_check 		__attribute__((warn_unused_result))
++#define __compiler_offsetof(a,b) __builtin_offsetof(a,b)
++
++#if __GNUC_MINOR__ >= 3
++/* Mark functions as cold. gcc will assume any path leading to a call
++   to them will be unlikely.  This means a lot of manual unlikely()s
++   are unnecessary now for any paths leading to the usual suspects
++   like BUG(), printk(), panic() etc. [but let's keep them for now for
++   older compilers]
++
++   Early snapshots of gcc 4.3 don't support this and we can't detect this
++   in the preprocessor, but we can live with this because they're unreleased.
++   Maketime probing would be overkill here.
++
++   gcc also has a __attribute__((__hot__)) to move hot functions into
++   a special section, but I don't see any sense in this right now in
++   the kernel context */
++#define __cold			__attribute__((__cold__))
++
++
++#if __GNUC_MINOR__ >= 5
++/*
++ * Mark a position in code as unreachable.  This can be used to
++ * suppress control flow warnings after asm blocks that transfer
++ * control elsewhere.
++ *
++ * Early snapshots of gcc 4.5 don't support this and we can't detect
++ * this in the preprocessor, but we can live with this because they're
++ * unreleased.  Really, we need to have autoconf for the kernel.
++ */
++#define unreachable() __builtin_unreachable()
++
++/* Mark a function definition as prohibited from being cloned. */
++#define __noclone	__attribute__((__noclone__))
++
++#endif
++#endif
++
++#if __GNUC_MINOR__ > 0
++#define __compiletime_object_size(obj) __builtin_object_size(obj, 0)
++#endif
++#if __GNUC_MINOR__ >= 4 && !defined(__CHECKER__)
++#define __compiletime_warning(message) __attribute__((warning(message)))
++#define __compiletime_error(message)
++#endif

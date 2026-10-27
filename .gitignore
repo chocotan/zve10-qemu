@@ -1,0 +1,36 @@
+# User-supplied downloads and extracted/build files
+/work/
+/incoming/
+/output/
+*.dmg
+*.exe
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.cpio
+*.img
+*.ko
+*.o
+*.so
+*.elf
+*.bin
+*.raw
+*.lz77
+*.rgba4444-morton
+*.ppm
+*.pgm
+
+# Local runtime exports and research scratch
+/evidence/
+__pycache__/
+*.pyc
+*.log
+*.part
+core
+core.*
+
+# Editors and environments
+.venv/
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,37 @@
+--- a/hw/arm/Kconfig
++++ b/hw/arm/Kconfig
+@@ -38,6 +38,15 @@
+     select ACPI_HMAT
+     select WDT_SBSA
+ 
++config ZVE10
++    bool
++    default y
++    depends on TCG && ARM
++    select A9MPCORE
++    select PL310
++    select PL011
++    select UNIMP
++
+ config CUBIEBOARD
+     bool
+     default y
+--- a/hw/arm/meson.build
++++ b/hw/arm/meson.build
+@@ -1,5 +1,6 @@
+ arm_common_ss = ss.source_set()
+ arm_common_ss.add(when: 'CONFIG_ARM_VIRT', if_true: files('virt.c'))
++arm_common_ss.add(when: 'CONFIG_ZVE10', if_true: files('zve10.c'))
+ arm_common_ss.add(when: 'CONFIG_ACPI', if_true: files('virt-acpi-build.c'))
+ arm_common_ss.add(when: 'CONFIG_DIGIC', if_true: files('digic_boards.c'))
+ arm_common_ss.add(when: 'CONFIG_EMCRAFT_SF2', if_true: files('msf2-som.c'))
+--- a/hw/timer/meson.build
++++ b/hw/timer/meson.build
+@@ -2,6 +2,7 @@
+ system_ss.add(when: 'CONFIG_ALLWINNER_A10_PIT', if_true: files('allwinner-a10-pit.c'))
+ system_ss.add(when: 'CONFIG_ARM_MPTIMER', if_true: files('arm_mptimer.c'))
+ system_ss.add(when: 'CONFIG_ARM_TIMER', if_true: files('arm_timer.c'))
++system_ss.add(when: 'CONFIG_ARM_VIRT', if_true: files('sony_hwtimer.c'))
+ system_ss.add(when: 'CONFIG_ARM_V7M', if_true: files('armv7m_systick.c'))
+ system_ss.add(when: 'CONFIG_ASPEED_SOC', if_true: files('aspeed_timer.c'))
+ system_ss.add(when: 'CONFIG_CADENCE', if_true: files('cadence_ttc.c'))
