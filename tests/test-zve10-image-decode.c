@@ -65,9 +65,14 @@ static __attribute__((noreturn)) void fixture_exit(int code) { assert(code==71);
 #include "../source/ui/ui-image-decode.h"
 #undef _exit
 
+/* This test drives the real decoder with a firmware image; without it there is nothing to check. */
 static void load(const char *path,unsigned char *data,size_t length)
 {
-    FILE *f=fopen(path,"rb"); assert(f);
+    FILE *f=fopen(path,"rb");
+    if (!f) {
+        printf("SKIP: firmware-derived fixture %s is absent; extract it from your own firmware first\n",path);
+        exit(0);
+    }
     assert(fread(data,1,length,f)==length && fgetc(f)==EOF && !ferror(f));
     assert(!fclose(f));
 }

@@ -3,9 +3,14 @@
 #include <stdlib.h>
 #include "../source/ui/ui-lz77.h"
 
+/* Firmware-derived fixtures are not distributed; skip the real-asset cases without them. */
 static void load(const char *path, unsigned char *data, size_t length)
 {
-    FILE *f=fopen(path,"rb"); assert(f);
+    FILE *f=fopen(path,"rb");
+    if (!f) {
+        printf("SKIP: firmware-derived fixture %s is absent; synthetic codec cases already passed\n",path);
+        exit(0);
+    }
     assert(fread(data,1,length,f)==length && fgetc(f)==EOF && !ferror(f));
     assert(!fclose(f));
 }
