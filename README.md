@@ -1,5 +1,8 @@
 # ZV-E10 QEMU 模拟器
 
+本项目已暂停，后续进展请参阅 https://github.com/cokeenet/zve10-qemu
+
+
 在 Linux 电脑上启动 Sony ZV-E10 的原厂系统，并显示原厂菜单，无需连接相机。项目参考 [A7C II QEMU](https://github.com/chocotan/a7c2-qemu) 的软件绘图方式实现。
 
 目前可以启动到命令行，并将原厂菜单保存为 640×480 图片。菜单里的布局、图标、文字和字体都来自相机固件。
