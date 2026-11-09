@@ -96,6 +96,12 @@ wlanResource_init, WlanAdjust_Init, KikiLogGenerator_init
 
 要往下走，需要实现同一条数据流通道的**缓冲提交**（对齐 ZV-E10 的 DMM/VDT 协议），属于 Route B 的核心工作量。
 
+## 2f. 下一步的具体锚点：ZV-E10 也有 AV-cam 帧消息常量
+
+在 `libObj.so` 中检索 A7C2 `yc_inject` 使用的帧消息 ID `0x10000102`，**共有 19 处**（`0x432708`、`0x43278c`、`0x5e1a58`、`0x77c5f0`、`0x136922a` …），说明 ZV-E10 的 AV-cam 数据流协议与 A7C2 同源，可复用其缓冲提交思路。
+
+其中 `0x77c5f0` 紧邻既有显示/提交代码（`0x777935` present caller 一带），很可能是"提交一帧到显示"的分支，是移植的第一个调查点。
+
 ## 3. 建议顺序
 
 1. （建议降级）先做路线 A 的定点调查：从 `Backup_write`(162 处) 中筛出与"开机完成/教学"相关的写入函数，确定 ZV-E10 的首设编号；再在 guest 内经原 API 种子 + 读回。

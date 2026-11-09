@@ -185,6 +185,16 @@
       "w2": 182856064,
       "w3": 182856072,
       "conclusion": "dataflow delivers frame ticks but no pixel buffers; missing image buffer, not ticks"
+    },
+    "next_anchor": {
+      "constant": "0x10000102 (AV-cam frame message, same as A7C2 yc_inject)",
+      "sites_in_libObj": 19,
+      "first_candidates": [
+        "0x77c5f0",
+        "0x5e1a58",
+        "0x432708"
+      ],
+      "note": "0x77c5f0 sits next to the existing display submit code (0x777935 present caller)"
     }
   },
   "regression_after_probes": {
