@@ -13,8 +13,8 @@
 
 static __attribute__((noreturn)) void gemini_cpu_unsupported(const char *detail, uintptr_t value)
 {
-    record("GEMINI.cpu.UNSUPPORTED", value);
     record(detail, value);
+    record("GEMINI.cpu.UNSUPPORTED", value);
     _exit(71);
 }
 
@@ -180,19 +180,22 @@ static uintptr_t gemini_cpu_draw(unsigned kind, uintptr_t r, uintptr_t s, uintpt
             physical < 0x20000000u || physical > 0x28000000u-src.capacity ||
             ((uint64_t)physical+src.capacity > target[5] && target[5]+640u*480*2 > physical))
             gemini_cpu_unsupported("GEMINI.cpu.source_span_or_alias",physical);
-        /* GL_LINEAR and GL_NEAREST agree on the verified 1:1 texel-center grid. */
-        if ((source.texture_fields[3] & 255) > 1 || (source.texture_fields[3] >> 16) > 1)
+        /* Original map B+84be14: 0=GL_NEAREST, 1=GL_LINEAR. */
+        unsigned min_filter = source.texture_fields[3] & 255, mag_filter = source.texture_fields[3] >> 16;
+        if (min_filter > 1 || mag_filter > 1 || min_filter != mag_filter)
             gemini_cpu_unsupported("GEMINI.cpu.source_filter",source.texture_fields[3]);
+        src.filter = min_filter;
+        if (src.filter && source.texture_fields[4] != 0x00030003)
+            gemini_cpu_unsupported("GEMINI.cpu.source_wrap",source.texture_fields[4]);
+        /* Filtering uses the allocated texture, including its original padding. */
+        if (src.filter) { src.width = aw; src.height = ah; }
         if (matrix[0] != 1 || matrix[5] != 1 || matrix[1] != 0 || matrix[4] != 0 ||
             !gemini_cpu_integral(matrix[12]) || !gemini_cpu_integral(matrix[13]))
             gemini_cpu_unsupported("GEMINI.cpu.source_filter_transform",m);
         if (kind == 2) {
             for (unsigned i=0;i<8;++i) if (!gemini_cpu_integral(points[i]))
                 gemini_cpu_unsupported("GEMINI.cpu.source_filter_quad",second);
-            if ((double)points[6]-points[0] != sr.w || (double)points[3]-points[1] != sr.h)
-                gemini_cpu_unsupported("GEMINI.cpu.source_filter_scale",second);
-        } else if (dr.w != sr.w || dr.h != sr.h)
-            gemini_cpu_unsupported("GEMINI.cpu.source_filter_scale",second);
+        }
     }
     ((void (*)(void))GEMINI_CPU_NATIVE(0x7c0d31))(); /* Original synchronous GL/RM finish. */
     if (!gemini_cpu_current(s) || !gemini_cpu_empty(r) || gemini_cpu_target(s,after) ||
@@ -220,7 +223,7 @@ static uintptr_t gemini_cpu_draw(unsigned kind, uintptr_t r, uintptr_t s, uintpt
         (kind && !gemini_cpu_source_same(&source))) {
         error="GEMINI.cpu.changed_during_map"; goto done;
     }
-    struct ui_gemini_surface dst = {mapping.pixels,640u*480*2,640,480,1280,0,UI_GEMINI_MORTON_BOTTOM_UP};
+    struct ui_gemini_surface dst = {mapping.pixels,640u*480*2,640,480,1280,0,UI_GEMINI_MORTON_BOTTOM_UP,0};
     result = kind == 2 ? ui_gemini_quad(&dst,&src,&state,matrix,color,&sr,points,mode) :
                         ui_gemini_rect(&dst,kind ? &src : NULL,&state,matrix,color,
                                        kind ? &sr : NULL,&dr,mode);

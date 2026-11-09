@@ -121,6 +121,21 @@ static void zve10_init(MachineState *machine)
 
     memory_region_add_subregion(sysmem, ZVE10_RAM_BASE, machine->ram);
 
+    /*
+     * eSRAM window backing the bootMonitor BOOTRAM work area.  The kernel's
+     * ej_head_init publishes cxd900x0_secondary_entry into BOOTRAM_VEC
+     * (0xfe005010 for CPU1) with the MMU off; QEMU's default SMP boot stub
+     * polls that address and jumps to it once boot_secondary raises the
+     * GIC softirq.
+     */
+    {
+        MemoryRegion *esram = g_new(MemoryRegion, 1);
+
+        memory_region_init_ram(esram, NULL, "zve10.esram", 32 * KiB,
+                               &error_fatal);
+        memory_region_add_subregion_overlap(sysmem, 0xfe000000, esram, 1);
+    }
+
     for (i = 0; i < machine->smp.cpus; i++) {
         Object *cpuobj = object_new(machine->cpu_type);
 
@@ -201,6 +216,9 @@ static void zve10_init(MachineState *machine)
         binfo.kernel_filename = machine->kernel_filename;
         binfo.kernel_cmdline = machine->kernel_cmdline;
         binfo.initrd_filename = machine->initrd_filename;
+        binfo.smp_loader_start = 0x00110000;
+        binfo.smp_bootreg_addr = 0xfe005010;
+        binfo.gic_cpu_if_addr = ZVE10_MPCORE_BASE + 0x100;
         arm_load_kernel(ARM_CPU(first_cpu), machine, &binfo);
     }
 }

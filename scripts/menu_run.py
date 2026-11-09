@@ -51,6 +51,8 @@ class NativeGuest:
             if not line or len(line) > 1024 * 1024:
                 raise RuntimeError('Native guest serial ended or exceeded line bound')
             self.log.write(line); self.log.flush()
+            if any(marker in line for marker in (b'DMP.fill.UNSUPPORTED=', b'DMP.blit.UNSUPPORTED=', b'GEMINI.cpu.UNSUPPORTED=')):
+                raise RuntimeError('Original CPU renderer rejected a draw: ' + line.decode(errors='replace').strip())
             for prefix in (b'NE_', b'UI_CAPTURE_'):
                 at = line.find(prefix)
                 if at >= 0:
@@ -135,6 +137,48 @@ class NativeGuest:
         self.pending = False
         if self.on_frame: self.on_frame(preview.convert('RGB'))
         return record, preview.convert('RGB')
+
+    def snapshot_state(self):
+        self.send('STATE')
+        return json.loads(self.until(b'NE_SNAPSHOT ').split(b' ', 1)[1])
+
+    def dump_threads(self):
+        if self.pending: raise RuntimeError('Cannot inspect threads while a capture is retained')
+        self.send('THREADS')
+        return json.loads(self.until(b'NE_THREADS_DONE ').split(b' ', 1)[1])
+
+    def capture_table(self):
+        if self.pending: raise RuntimeError('Cannot inspect CaptureId table during retained display capture')
+        self.send('CAPTABLE')
+        state = json.loads(self.until(b'NE_CAPTURE_TABLE_STATE ').split(b' ', 1)[1])
+        if state['physical'] != 0x1ff00000 or state['bytes'] != 0x4014:
+            raise RuntimeError('Unexpected CaptureId model RAM bounds')
+        self.qmp.call('stop')
+        data = []
+        try:
+            if self.qmp.call('query-status')['status'] != 'paused':
+                raise RuntimeError('CaptureId readback did not pause')
+            for offset, name, fingerprint in ((0, 'capture-table.bin', state['fingerprint']),
+                                              (0x8000, 'capture-table-checkpoint.bin', state['checkpoint_fingerprint'])):
+                path = self.out / name
+                self.qmp.call('pmemsave', {'val': state['physical'] + offset, 'size': state['bytes'], 'filename': str(path)})
+                raw = path.read_bytes()
+                if len(raw) != state['bytes'] or self.validator.fingerprint(raw) != fingerprint:
+                    raise RuntimeError('CaptureId guest/QMP content mismatch')
+                data.append(raw)
+        finally:
+            self.qmp.call('cont')
+        header = [int.from_bytes(data[0][n:n+4], 'little') for n in range(0, 20, 4)]
+        if header != state['header'] or header[0] != 1024:
+            raise RuntimeError('CaptureId native header contract mismatch')
+        return {**state, 'guest_qmp_exact': True, 'sha256': sha256(data[0]).hexdigest(),
+                'checkpoint_sha256': sha256(data[1]).hexdigest(), 'checkpoint_matches_live': data[0] == data[1],
+                'persistence': 'volatile model RAM only', 'physical_compatibility_verified': False}
+
+    def shoot_request(self):
+        self.send('SHOOTREQ')
+        if self.until(b'NE_SHOOTREQ_OK') != b'NE_SHOOTREQ_OK':
+            raise RuntimeError('Native shoot request failed')
 
     def transform(self, identifier):
         self.send(f'TRANSFORM {identifier:08x}')
@@ -276,19 +320,61 @@ def open_probe(guest):
     return out
 
 
-def shoot_observe(guest, frames=6):
-    """Shoot-page observation: the page legitimately stays uniform, so record it instead of demanding change."""
+def shoot_observe(guest, frames=6, warmup_ms=0, settle_s=8.0, deadline_s=90.0):
+    """Observe original startup over time; a successful capture is not a shooting-page pass."""
+    timing = []
+    first = guest.snapshot_state()
+    timing.append(first)
+    deadline = time.monotonic() + deadline_s
+    while timing[-1]['guest_ms'] - first['guest_ms'] < warmup_ms and time.monotonic() < deadline:
+        time.sleep(1)
+        timing.append(guest.snapshot_state())
+    if guest.__dict__.get('_shoot_on_ready') and not getattr(guest, '_shoot_sent', False):
+        guest.shoot_request()
+        guest._shoot_sent = True
+        time.sleep(settle_s)
     captured = []
     for _ in range(frames):
+        time.sleep(5)
         record, image = guest.capture()
         record['distinct_colors'] = len({image.convert('RGB').getpixel((x, y))
                                          for y in range(0, 480, 24) for x in range(0, 640, 32)})
         captured.append(record)
-    return {'frames': len(captured),
+    threads = guest.dump_threads()
+    timing.append(guest.snapshot_state())
+    return {'frames': len(captured), 'threads': threads, 'guest_timing': timing,
+            'requested_warmup_ms': warmup_ms,
+            'warmup_guest_elapsed_ms': timing[-2]['guest_ms'] - first['guest_ms'],
             'distinct_view': sorted({f['state']['view'] for f in captured}),
             'view_state': sorted({f['state']['view_state'] for f in captured}),
             'node_installed': any(f['state']['node_installed'] for f in captured),
             'color_samples': sorted({f['distinct_colors'] for f in captured})}
+
+
+def shoot_menu_probe(guest):
+    # Open as soon as the original shooting view actually draws; waiting for a
+    # fixed number of extra frames only widens the known startup-crash window.
+    deadline = time.monotonic() + 100
+    before = None
+    while time.monotonic() < deadline:
+        frame, image = guest.capture()
+        frame['distinct_colors'] = len({image.convert('RGB').getpixel((x, y))
+                                        for y in range(0, 480, 24) for x in range(0, 640, 32)})
+        if frame['state']['entries'] == 0xc3 and frame['distinct_colors'] > 1:
+            before = frame
+            break
+        time.sleep(2)
+    if before is None:
+        return {'shooting_frame': None, 'menu_raw_event': '0x150100f0', 'after_menu': []}
+    guest.raw_event(0x150100f0)
+    samples = []
+    for _ in range(6):
+        time.sleep(3)
+        frame, _ = guest.capture()
+        samples.append({'frame': frame['native_frame'], 'view_id': frame['state']['entries'],
+                        'state': frame['state']['view_state'],
+                        'changed_pixels': frame['raw_sha256'] != before['raw_sha256']})
+    return {'shooting_frame': before, 'menu_raw_event': '0x150100f0', 'after_menu': samples}
 
 
 def exercise_original(guest):
@@ -391,11 +477,11 @@ def key_probe(guest):
     return observations
 
 
-def window(guest, self_test, out, a7c2_menu):
+def window(guest, self_test, out, a7c2_menu, shoot=False):
     import tkinter as tk
     from PIL import ImageTk, ImageGrab
     root = tk.Tk()
-    root.title('ZV-E10 | ' + ('A7C2 menu option' if a7c2_menu else 'Original Sony menu'))
+    root.title('ZV-E10 | ' + ('Original shooting page' if shoot else ('A7C2 menu option' if a7c2_menu else 'Original Sony menu')))
     root.resizable(False, False)
     panel = tk.Label(root, borderwidth=0)
     panel.pack()
@@ -429,12 +515,14 @@ def window(guest, self_test, out, a7c2_menu):
         except Exception as error:
             failure.append(error); root.destroy()
 
-    keys = ('UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'MENU') if a7c2_menu else ('UP', 'DOWN', 'LEFT', 'RIGHT')
+    keys = () if shoot else (('UP', 'DOWN', 'LEFT', 'RIGHT', 'ENTER', 'MENU') if a7c2_menu else ('UP', 'DOWN', 'LEFT', 'RIGHT'))
+    if shoot:
+        tk.Label(controls, text='原拍摄页面 · 镜头状态与按键尚未就绪').pack()
     for name in keys:
         tk.Button(controls, text=name, command=lambda key=name: send(key)).pack(side='left', expand=True, fill='x')
     for event, name in [('<Up>','UP'),('<Down>','DOWN'),('<Left>','LEFT'),('<Right>','RIGHT'),
                         ('<Return>','ENTER'),('<Escape>','MENU')]:
-        root.bind(event, lambda _, key=name: send(key))
+        if not shoot: root.bind(event, lambda _, key=name: send(key))
     root.protocol('WM_DELETE_WINDOW', root.destroy)
     guest.on_frame = show
 
@@ -447,7 +535,12 @@ def window(guest, self_test, out, a7c2_menu):
             visible.save(out / 'visible-initial.png')
             if visible.tobytes() != displayed[-1].tobytes():
                 raise RuntimeError('Visible native window differs from the guest frame')
-            (exercise if a7c2_menu else exercise_original)(guest)
+            if shoot:
+                shoot_observe(guest, frames=12)
+                if guest.frames[-1]['state']['entries'] != 0xc3 or guest.frames[-1]['distinct_colors'] < 2:
+                    raise RuntimeError('Original shooting view has no visible content')
+            else:
+                (exercise if a7c2_menu else exercise_original)(guest)
             visible = ImageGrab.grab(bbox=bounds).convert('RGB')
             visible.save(out / 'visible-parent.png')
             if visible.tobytes() != displayed[-1].tobytes():
@@ -458,9 +551,21 @@ def window(guest, self_test, out, a7c2_menu):
         finally:
             root.destroy()
 
+    def load_shoot(attempt=0):
+        try:
+            frame, image = guest.capture()
+            if frame['state']['entries'] == 0xc3 and len(image.getcolors(640 * 480) or []) > 1:
+                return
+            if attempt >= 90:
+                raise RuntimeError('Original shooting page did not render within the observation window')
+            root.after(1000, lambda: load_shoot(attempt + 1))
+        except Exception as error:
+            failure.append(error); root.destroy()
+
     try:
         guest.capture()
         if self_test: root.after(250, check)
+        elif shoot: root.after(1000, load_shoot)
         root.mainloop()
     finally:
         guest.on_frame = None
@@ -485,8 +590,19 @@ def main():
     parser.add_argument('--id-probe', action='store_true', help='shoot page: post real input-table ids and record effects')
     parser.add_argument('--key-probe', action='store_true', help='shoot page: send direction/MENU events and record AP consumption')
     parser.add_argument('--start-page', choices=('menu','shoot'), default='menu', help='menu: open settings menu; shoot: let the AP pick its own start page')
+    parser.add_argument('--capture-table-model', action='store_true', help='explicit local model: provide one empty native CaptureId table in reserved guest RAM; requires --shoot-view')
+    parser.add_argument('--full-services', action='store_true',
+                        help='explicit full-service boot: overlay restores the original libIMDB.so target table (default target == qemu target) so the USB/tethering services omitted by the AP-only shortcut initialize at boot')
+    parser.add_argument('--shoot-view', action='store_true', help='shoot probe only: request original Stlrec view 0xc3 through the guarded native selector on the UI thread')
+    parser.add_argument('--smp', type=int, choices=(1, 2), default=1,
+                        help='guest CPU count; default 1 keeps prior behaviour, 2 matches the SMP-preempt original kernel')
+    parser.add_argument('--test-pattern', action='store_true', help='shoot probe only: composite diagnostic colour bars on the display output')
     parser.add_argument('--self-test', action='store_true', help='exercise and close the visible window automatically')
     args = parser.parse_args()
+    if (args.test_pattern or args.shoot_view or args.capture_table_model) and (args.start_page != 'shoot' or args.a7c2_menu or args.a7c2_assets):
+        parser.error('shoot models require --start-page shoot in original mode')
+    if args.capture_table_model and not (args.shoot_view or args.full_services):
+        parser.error('--capture-table-model requires --shoot-view or --full-services')
     import uuid
     out = (args.out or ROOT / 'output' / ('menu-' + uuid.uuid4().hex[:12])).resolve()
     zroot = ROOT
@@ -512,16 +628,19 @@ def main():
     process = qmp = guest = None
     control = None
     try:
-        build(zroot, donor, out, args.start_page)
+        build(zroot, donor, out, args.start_page, args.test_pattern, args.shoot_view, args.capture_table_model, args.full_services)
         validator = load_module('zve_legacy_capture', zroot / 'scripts/capture-menu.py')
         control = tempfile.mkdtemp(prefix='zve-native-entry-')
         qmp_path, serial_path = Path(control) / 'qmp', Path(control) / 'serial'
         command = host.qemu_command(zroot / 'work/qemu-src/build-zve10/qemu-system-arm', zroot) + ['-nodefaults', '-no-user-config',
-                   '-M', 'zve10', '-cpu', 'cortex-a9', '-smp', '1', '-m', '1024',
+                   '-M', 'zve10', '-cpu', 'cortex-a9', '-smp', str(args.smp), '-m', '1024',
                    '-kernel', str(zroot / 'work/kbuild-ui/arch/arm/boot/Image'), '-initrd', str(out / 'native-ui.cpio'),
-                   '-append', 'console=ttyAM0,115200n8 cfg.uart=1 mem=1G@0 memrsv=0x1A5E000@0x02E68000 memrsv=128M@0x20000000:uc rdinit=/init loglevel=8',
+                   '-append', 'console=ttyAM0,115200n8 cfg.uart=1 mem=1G@0 memrsv=0x1A5E000@0x02E68000 memrsv=128M@0x20000000:uc rdinit=/init loglevel=8 ' + __import__('os').environ.get('ZVE_APPEND', ''),
                    '-display', 'none', '-serial', f'unix:{serial_path},server=on,wait=on',
                    '-qmp', f'unix:{qmp_path},server=on,wait=off', '-monitor', 'none', '-no-reboot']
+        if args.capture_table_model:
+            index = command.index('-append') + 1
+            command[index] += ' memrsv=128K@0x1ff00000 '
         for relative, expected in host.ASSETS.items():
             if digest(zroot / relative) != expected: raise RuntimeError('Baseline launch asset differs')
         result['command'] = command
@@ -542,8 +661,19 @@ def main():
                 if args.open_probe:
                     result['probe'] = open_probe(guest)
                     verified = True
+                elif args.shoot_view and args.key_probe:
+                    result['probe'] = shoot_menu_probe(guest)
+                    verified = True
+                elif args.shoot_view and not args.headless:
+                    verified = window(guest, args.self_test, out, False, shoot=True)
+                    result['window_rgb_exact'] = verified
                 elif args.start_page == 'shoot' and not (args.key_probe or args.id_probe or args.map_probe or args.tail_probe or args.keyin_probe):
-                    result['probe'] = shoot_observe(guest)
+                    if args.full_services and args.shoot_view:
+                        guest._shoot_on_ready = True  # host requests 0xc3 after the warm-up settle
+                    result['probe'] = shoot_observe(guest, frames=12 if args.shoot_view else 6,
+                                                    warmup_ms=60000 if args.capture_table_model else (20000 if args.shoot_view else 0),
+                                                    settle_s=8.0, deadline_s=180.0 if args.full_services else 90.0)
+                    result['shoot_request_host_driven'] = bool(args.full_services and args.shoot_view)
                     verified = True
                 elif args.tail_probe:
                     result['probe'] = tail_probe(guest)
@@ -574,12 +704,27 @@ def main():
                         if getattr(guest, 'entry_title_error', None):
                             result['entry_title_error'] = guest.entry_title_error
                     verified = True
-                result['semantic_checks_performed'] = verified
-                result['original_menu_verified'] = verified
+                result['test_pattern_enabled'] = args.test_pattern
+                result['shoot_view_requested'] = args.shoot_view
+                result['capture_table_model'] = args.capture_table_model
+                result['full_services'] = args.full_services
+                result['shooting_page_rendered'] = args.shoot_view and any(
+                    f['state']['entries'] == 0xc3 and f.get('distinct_colors', 0) > 1 for f in guest.frames)
+                result['shooting_page_verified'] = False
+                after_menu = result.get('probe', {}).get('after_menu', []) if args.key_probe else []
+                result['shooting_to_menu_verified'] = any(
+                    f.get('view_id') == 0xba and f.get('changed_pixels') for f in after_menu)
+                result['semantic_checks_performed'] = verified and args.start_page == 'menu'
+                result['original_menu_verified'] = verified and args.start_page == 'menu'
                 result['original_menu_row_verified'] = verified and a7c2_menu
                 result['native_entry_verified'] = verified and a7c2_menu
+                if args.capture_table_model:
+                    guest.send('UIPC')
+                    result['uipc_dump'] = json.loads(guest.until(b'NE_UIPC_DONE ').split(b' ', 1)[1])
+                    result['capture_table_readback'] = guest.capture_table()
                 result['guest_done'] = guest.stop()
                 if not result['guest_done']: raise RuntimeError('Native control did not stop normally')
+                result['shooting_page_display_verified'] = bool(result['shooting_page_rendered'])
                 result['ok'] = True
             except Exception as error:
                 result['error'] = f'{type(error).__name__}: {error}'

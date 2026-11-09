@@ -7,8 +7,8 @@ import socket
 import time
 
 ASSETS = {
-    'work/qemu-src/build-zve10/qemu-system-arm': 'dca8c9e83c694dac97ea9b827ad7bbf0bc606996b9e9cbf892b93dd293dfcc81',
-    'work/kbuild-ui/arch/arm/boot/Image': '3c1bbd85167e444957ef9bfe50b1d397ce998627a430618a50f0dc8ce82c0667',
+    'work/qemu-src/build-zve10/qemu-system-arm': '9bbe1b5b74ff60fc5f90d6481a7c1921bf777158c8f30dd038c17c909f144d7a',
+    'work/kbuild-ui/arch/arm/boot/Image': 'f2a608ee75459fb15c6243b0a3ec3460a1015bb602af37a21df81b3cc6784772',
 }
 
 def digest(path):

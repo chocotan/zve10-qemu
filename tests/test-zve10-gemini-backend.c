@@ -223,7 +223,9 @@ int main(void)
     reset(); put(0xc24,0x20312200); rejected(1,"GEMINI.cpu.source_span_or_alias"); unchanged();
     reset(); put(0xa40,6); rejected(1,"GEMINI.cpu.source_format"); unchanged();
     reset(); put(0xa34,0x00020001); rejected(1,"GEMINI.cpu.source_filter"); unchanged();
-    reset(); put(0x2214,2u<<16|3); rejected(1,"GEMINI.cpu.source_filter_scale"); unchanged();
+    reset(); put(0x2214,2u<<16|3); assert(call(1)==1 && !strcmp(events,"FLMUN"));
+    assert(output(17,174)==0xd02f && output(18,174)==0x808f && output(19,174)==0x20df);
+    reset(); put(0xa38,0); rejected(1,"GEMINI.cpu.source_wrap"); unchanged();
     reset(); put(0x2030,0x3f000000); rejected(1,"GEMINI.cpu.source_filter_transform"); unchanged();
     reset(); rejected(3,"GEMINI.cpu.line"); unchanged();
 

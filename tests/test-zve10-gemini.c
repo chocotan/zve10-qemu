@@ -25,7 +25,7 @@ static void test_geometry(void)
 {
     unsigned char bytes[128];
     memset(bytes, 0x5a, sizeof bytes);
-    struct ui_gemini_surface d = {bytes+4,120,8,6,20,0,UI_GEMINI_LINEAR};
+    struct ui_gemini_surface d = {bytes+4,120,8,6,20,0,UI_GEMINI_LINEAR,0};
     struct ui_gemini_state s = state_for(5,4);
     s.viewport.x = s.viewport.y = 1;
     s.scissor_enabled = 1;
@@ -58,8 +58,8 @@ static void test_geometry(void)
 static void test_mask_and_quad(void)
 {
     unsigned char bytes[8*6*2] = {0}, mask[] = {99,0,85,99, 99,170,255,99};
-    struct ui_gemini_surface d = {bytes,sizeof bytes,8,6,16,0,0};
-    struct ui_gemini_surface src = {mask,sizeof mask,4,2,4,3,0};
+    struct ui_gemini_surface d = {bytes,sizeof bytes,8,6,16,0,0,0};
+    struct ui_gemini_surface src = {mask,sizeof mask,4,2,4,3,0,0};
     struct ui_gemini_state s = state_for(8,6);
     struct ui_gemini_rect sr = {1,0,2,2}, dr = {-1,0,4,4};
     unsigned char tint[] = {34,153,238,153};
@@ -90,7 +90,7 @@ static void test_mask_and_quad(void)
 static void test_blending(void)
 {
     unsigned char bytes[2], texture[2];
-    struct ui_gemini_surface d = {bytes,2,1,1,2,0,0}, src = {texture,2,1,1,2,0,0};
+    struct ui_gemini_surface d = {bytes,2,1,1,2,0,0,0}, src = {texture,2,1,1,2,0,0,0};
     struct ui_gemini_state s = state_for(1,1);
     struct ui_gemini_rect r = {0,0,1,1};
     put16(texture,0xf008); put16(bytes,0x00f4);
@@ -140,8 +140,8 @@ static void test_rejection(void)
     unsigned char bytes[136], source[8], saved[sizeof bytes];
     memset(bytes,0x63,sizeof bytes); memset(source,0xff,sizeof source);
     memcpy(saved,bytes,sizeof bytes);
-    struct ui_gemini_surface d = {bytes+4,128,8,8,16,0,0};
-    struct ui_gemini_surface src = {source,sizeof source,2,2,4,0,0};
+    struct ui_gemini_surface d = {bytes+4,128,8,8,16,0,0,0};
+    struct ui_gemini_surface src = {source,sizeof source,2,2,4,0,0,0};
     struct ui_gemini_state s = state_for(8,8);
     struct ui_gemini_rect r = {0,0,8,8}, sr = {0,0,2,2};
     float m[16]; memcpy(m,identity,sizeof m);
@@ -202,8 +202,8 @@ static void test_source_topdown(void)
         uint16_t value=y<2 ? (uint16_t)(((y+1)<<12)|((x&15)<<8)|15) : 0x9876;
         memcpy(raw+2+(tile*64+code)*2,&value,2);
     }
-    struct ui_gemini_surface src={raw+2,1024,64,2,128,0,UI_GEMINI_MORTON_TOP_DOWN};
-    struct ui_gemini_surface dst={output+2,256,64,2,128,0,UI_GEMINI_LINEAR};
+    struct ui_gemini_surface src={raw+2,1024,64,2,128,0,UI_GEMINI_MORTON_TOP_DOWN,0};
+    struct ui_gemini_surface dst={output+2,256,64,2,128,0,UI_GEMINI_LINEAR,0};
     struct ui_gemini_state state=state_for(64,2);
     struct ui_gemini_rect rect={0,0,64,2};
     assert(!ui_gemini_rect(&dst,&src,&state,identity,white,&rect,&rect,UI_GEMINI_TEXTURE));
@@ -225,8 +225,8 @@ static void test_alpha_tiles(void)
         }
         source[tile*64+code]=(unsigned char)(y<2 ? (x+y)*17 : 0x96);
     }
-    struct ui_gemini_surface src={source,sizeof source,14,2,16,3,UI_GEMINI_MORTON_TOP_DOWN};
-    struct ui_gemini_surface dst={output,sizeof output,14,2,28,0,UI_GEMINI_LINEAR};
+    struct ui_gemini_surface src={source,sizeof source,14,2,16,3,UI_GEMINI_MORTON_TOP_DOWN,0};
+    struct ui_gemini_surface dst={output,sizeof output,14,2,28,0,UI_GEMINI_LINEAR,0};
     struct ui_gemini_state state=state_for(14,2);
     struct ui_gemini_rect rect={0,0,14,2};
     const unsigned char color[4]={255,34,51,255};
@@ -241,8 +241,8 @@ static void test_present_roundtrip(void)
     unsigned char *linear = malloc(n+4), *tiled = malloc(n+4), *out = malloc(n+4);
     assert(linear && tiled && out);
     memset(linear,0x39,n+4); memset(tiled,0x39,n+4); memset(out,0x72,n+4);
-    struct ui_gemini_surface d = {linear+2,n,640,480,1280,0,UI_GEMINI_LINEAR};
-    struct ui_gemini_surface t = {tiled+2,n,640,480,1280,0,UI_GEMINI_MORTON_BOTTOM_UP};
+    struct ui_gemini_surface d = {linear+2,n,640,480,1280,0,UI_GEMINI_LINEAR,0};
+    struct ui_gemini_surface t = {tiled+2,n,640,480,1280,0,UI_GEMINI_MORTON_BOTTOM_UP,0};
     struct ui_gemini_state s = state_for(640,480);
     struct ui_gemini_rect r = {0,0,640,480};
     assert(!ui_gemini_rect(&d,NULL,&s,identity,white,NULL,&r,0));
@@ -276,7 +276,7 @@ static void test_present_roundtrip(void)
 static void test_partial_tile(void)
 {
     unsigned char bytes[132]; memset(bytes,0x5a,sizeof bytes);
-    struct ui_gemini_surface d = {bytes+2,128,5,5,16,0,UI_GEMINI_MORTON_BOTTOM_UP};
+    struct ui_gemini_surface d = {bytes+2,128,5,5,16,0,UI_GEMINI_MORTON_BOTTOM_UP,0};
     struct ui_gemini_state s = state_for(5,5);
     struct ui_gemini_rect r = {0,0,5,1};
     d.capacity = 80; /* Logical rows alone do not cover the final whole tile. */
@@ -293,6 +293,24 @@ static void test_partial_tile(void)
         assert(ui_u16(d.pixels+code*2) == (x < 5 && y == 4 ? 0xffff : 0x5a5a));
     }
     assert(bytes[0] == 0x5a && bytes[1] == 0x5a && bytes[130] == 0x5a && bytes[131] == 0x5a);
+}
+
+static void test_linear_filter(void)
+{
+    uint16_t texture[4]={0xf00f,0x0f0f,0x00ff,0xffff}, output[16]={0};
+    struct ui_gemini_surface src={(unsigned char *)texture,sizeof texture,2,2,4,0,0,1};
+    struct ui_gemini_surface dst={(unsigned char *)output,sizeof output,4,4,8,0,0,0};
+    struct ui_gemini_state state=state_for(4,4);
+    struct ui_gemini_rect sr={0,0,2,2}, dr={0,0,4,4};
+    assert(!ui_gemini_rect(&dst,&src,&state,identity,white,&sr,&dr,UI_GEMINI_MULTIPLY));
+    assert(output[0]==0xf00f && output[3]==0x0f0f && output[12]==0x00ff && output[15]==0xffff);
+    assert(output[5]==0x944f);
+    dr.w=dr.h=1;
+    assert(!ui_gemini_rect(&dst,&src,&state,identity,white,&sr,&dr,UI_GEMINI_MULTIPLY));
+    assert(output[0]==0x888f);
+    src.filter=2;memset(output,0x5a,sizeof output);
+    assert(ui_gemini_rect(&dst,&src,&state,identity,white,&sr,&dr,UI_GEMINI_MULTIPLY)==-5);
+    for (unsigned i=0;i<16;++i) assert(output[i]==0x5a5a);
 }
 
 static void test_slow_clear(void)
@@ -331,6 +349,7 @@ int main(void)
     test_alpha_tiles();
     test_present_roundtrip();
     test_partial_tile();
+    test_linear_filter();
     test_slow_clear();
     puts("PASS: original Gemini rect/quad affine, viewport/scissor, A8/RGBA4444, native blend/masks, atomic rejection, Morton-bottom-up present and bounds");
     return 0;

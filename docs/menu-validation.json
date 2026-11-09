@@ -102,104 +102,355 @@
     }
   },
   "shoot_page_probe": {
-    "status": "shoot-page-visible-by-virtual-frame; OSD still absent",
-    "run": "output/shoot-observe-v1",
-    "findings": [
-      "shoot page uses view slot 0xa0, Main is shared ViewBase::Main",
-      "only 3 framebuffer draws, 0 glyph draws, uniform frame",
-      "UI thread waits in osal_wai_sem_tmo (sem 0x170604c) for imaging data",
-      "synthesized function events -> trigger 0x11012001/0x11012007, 0 AP consumption",
-      "raw input-table ids reach Main but change neither view nor pixels",
-      "transformByTriggerTable over 235 candidate ids always returns 0x11012005 (guard denies; no table transform for this view)",
-      "Injecting via sub_11fbbc blocks in snd_InfraInputEvent_to_InputServant on the UI thread (probe timeouts)",
-      "sub_11fbbc blocks the same way from the transport control thread, so it is not a thread-affinity problem",
-      "InputService::createEvent ignores this, but InputService::pushFilterEvent needs a real InputService instance (this+0x10 lock)",
-      "the instance comes from a libObj global used by sub_11fbbc; no stable way to read it yet",
-      "InputService instance found at libObj global object_base+0x13dba70",
-      "createEvent+pushFilterEvent injection enters the original dispatch (NE_BASEMAIN 0 -> 53) but pushFilterEvent never returns",
-      "therefore the shoot page blocks before input dispatch completes, i.e. keys cannot be validated without live-view data"
-    ],
-    "next": "either add the minimal functional live-view source (authorized virtual-functional-camera-v1 profile) or accept that keys/navigation on the shoot page stay unverifiable",
-    "live_view_source": "not implemented (user chose keys/navigation only)",
-    "a7m4_method": {
-      "reference": "a7m4-qemu report 2026-11-04-skip-first-setup.md",
-      "approach": "seed Backup 02cf0014=0, 01070140=0, 02cf1701=1 + udate, let the AP boot into the shooting UI naturally",
-      "zve10_status": "mirror id 01070140 present 6x in libObj; primary ids not found as literals or movt immediates yet",
-      "next": "locate ZV-E10 Backup read/write call sites for first-setup ids, seed via original API, verify screen sequence and OSD pixels"
-    },
-    "verified": {
-      "ok": true,
-      "qemu_rc": 0,
-      "frames": 6,
-      "view_state": [
-        1
-      ],
-      "color_samples": [
-        1
-      ],
-      "note": "shoot mode completes cleanly; the page is a single uniform colour, no OSD"
-    },
-    "ruled_out": [
-      "module additions (input/indctr/keyinject/udate/mcmn_drv/codec_drv) do not initialise fonts",
-      "im.elf emits almost only ulogio log traffic, so it is not waiting on a model reply it never gets",
-      "opening views directly through root vtable+0x90 crashes im.elf (section permission fault at 0x80bff6f6)"
-    ],
-    "drawing_process": "im.elf in BOTH modes (bootin only launches it); menu appears because our harness opens view 0x11 explicitly",
-    "sem_waits": {
-      "0x9401c3": 46,
-      "0x83e03f": 23,
-      "0x7a008d": 23,
-      "0x830451": 18,
-      "0xcfe012": 11,
-      "0x170604c": 9,
-      "0x170604d": 6
-    },
-    "sem_caller_resolution": "dladdr resolves only im.elf+0x380d/0x3865 (its wait wrapper), so the waiting subsystem is not identified by this route",
+    "status": "original ViewStlrec rendered with lens-retracted caution; full HUD and navigation remain incomplete",
+    "shooting_page_verified": false,
+    "original_stlrec_rendered": true,
+    "window_rgb_exact": true,
+    "capture_verified": false,
+    "evidence": "evidence/shoot-startup/validation.json",
     "assessment": "docs/shoot-model-assessment.md",
-    "recommended_route": "A: locate ZV-E10 first-setup Backup ids (A7M4 analogue) before any functional camera model",
-    "rcv_evidence": {
-      "run": "output/shoot-rcv-v1",
-      "receives": 104,
-      "rc0": 93,
-      "rc_minus1022": 11,
-      "top": "ulogio 50, dataflowInfraFramework 14, libObj 6/6/4/4/2, rsrcHotshoe 6, gps 2, jiritsu 1",
-      "conclusion": "im.elf is idle but alive; it lacks video frames, and the shooting OSD is composited with the frame, so nothing is visible"
+    "current_static_inspector": "evidence/shoot-startup/inspect_shoot_startup.py",
+    "old_probe_records": {
+      "status": "shoot-page-visible-by-virtual-frame; OSD still absent",
+      "run": "output/shoot-observe-v1",
+      "findings": [
+        "shoot page uses view slot 0xa0, Main is shared ViewBase::Main",
+        "only 3 framebuffer draws, 0 glyph draws, uniform frame",
+        "UI thread waits in osal_wai_sem_tmo (sem 0x170604c) for imaging data",
+        "synthesized function events -> trigger 0x11012001/0x11012007, 0 AP consumption",
+        "raw input-table ids reach Main but change neither view nor pixels",
+        "transformByTriggerTable over 235 candidate ids always returns 0x11012005 (guard denies; no table transform for this view)",
+        "Injecting via sub_11fbbc blocks in snd_InfraInputEvent_to_InputServant on the UI thread (probe timeouts)",
+        "sub_11fbbc blocks the same way from the transport control thread, so it is not a thread-affinity problem",
+        "InputService::createEvent ignores this, but InputService::pushFilterEvent needs a real InputService instance (this+0x10 lock)",
+        "the instance comes from a libObj global used by sub_11fbbc; no stable way to read it yet",
+        "InputService instance found at libObj global object_base+0x13dba70",
+        "createEvent+pushFilterEvent injection enters the original dispatch (NE_BASEMAIN 0 -> 53) but pushFilterEvent never returns",
+        "therefore the shoot page blocks before input dispatch completes, i.e. keys cannot be validated without live-view data"
+      ],
+      "next": "either add the minimal functional live-view source (authorized virtual-functional-camera-v1 profile) or accept that keys/navigation on the shoot page stay unverifiable",
+      "live_view_source": "not implemented (user chose keys/navigation only)",
+      "a7m4_method": {
+        "reference": "a7m4-qemu report 2026-11-04-skip-first-setup.md",
+        "approach": "seed Backup 02cf0014=0, 01070140=0, 02cf1701=1 + udate, let the AP boot into the shooting UI naturally",
+        "zve10_status": "mirror id 01070140 present 6x in libObj; primary ids not found as literals or movt immediates yet",
+        "next": "locate ZV-E10 Backup read/write call sites for first-setup ids, seed via original API, verify screen sequence and OSD pixels"
+      },
+      "verified": {
+        "ok": true,
+        "qemu_rc": 0,
+        "frames": 6,
+        "view_state": [
+          1
+        ],
+        "color_samples": [
+          1
+        ],
+        "note": "shoot mode completes cleanly; the page is a single uniform colour, no OSD"
+      },
+      "ruled_out": [
+        "module additions (input/indctr/keyinject/udate/mcmn_drv/codec_drv) do not initialise fonts",
+        "im.elf emits almost only ulogio log traffic, so it is not waiting on a model reply it never gets",
+        "opening views directly through root vtable+0x90 crashes im.elf (section permission fault at 0x80bff6f6)"
+      ],
+      "drawing_process": "im.elf in BOTH modes (bootin only launches it); menu appears because our harness opens view 0x11 explicitly",
+      "sem_waits": {
+        "0x9401c3": 46,
+        "0x83e03f": 23,
+        "0x7a008d": 23,
+        "0x830451": 18,
+        "0xcfe012": 11,
+        "0x170604c": 9,
+        "0x170604d": 6
+      },
+      "sem_caller_resolution": "dladdr resolves only im.elf+0x380d/0x3865 (its wait wrapper), so the waiting subsystem is not identified by this route",
+      "assessment": "docs/shoot-model-assessment.md",
+      "recommended_route": "A: locate ZV-E10 first-setup Backup ids (A7M4 analogue) before any functional camera model",
+      "rcv_evidence": {
+        "run": "output/shoot-rcv-v1",
+        "receives": 104,
+        "rc0": 93,
+        "rc_minus1022": 11,
+        "top": "ulogio 50, dataflowInfraFramework 14, libObj 6/6/4/4/2, rsrcHotshoe 6, gps 2, jiritsu 1",
+        "conclusion": "im.elf is idle but alive; it lacks video frames, and the shooting OSD is composited with the frame, so nothing is visible"
+      },
+      "virtual_frame": {
+        "run": "output/shoot-frame-v4",
+        "ok": true,
+        "qemu_rc": 0,
+        "color_samples": 8,
+        "evidence": "evidence/virtual-frame-test-pattern.png",
+        "mechanism": "underlay composite in the linear present target, only pixels still at background colour; ownership table keeps later frames refreshable",
+        "limits": "AP still draws no OSD (glyph_images=0); frame is static because the AP presents only on content change"
+      },
+      "dff_messages": {
+        "run": "output/shoot-rcv-v2",
+        "count": 14,
+        "w0": "frame ticks, mostly +32 (≈31.25 fps)",
+        "w1": [
+          0,
+          243596060
+        ],
+        "w2": 182856064,
+        "w3": 182856072,
+        "conclusion": "dataflow delivers frame ticks but no pixel buffers; missing image buffer, not ticks"
+      },
+      "next_anchor": {
+        "constant": "0x10000102 (AV-cam frame message, same as A7C2 yc_inject)",
+        "sites_in_libObj": 19,
+        "first_candidates": [
+          "0x77c5f0",
+          "0x5e1a58",
+          "0x432708"
+        ],
+        "note": "0x77c5f0 sits next to the existing display submit code (0x777935 present caller)"
+      },
+      "send_api": {
+        "DataflowInfraSender::SendASync GOT": "0x13d7d64",
+        "DataflowInfraCh::infraGetPin GOT": "0x13d7ce4",
+        "DataflowInfra_relocations_in_libObj": 148
+      }
     },
-    "virtual_frame": {
-      "run": "output/shoot-frame-v4",
-      "ok": true,
-      "qemu_rc": 0,
-      "color_samples": 8,
-      "evidence": "evidence/virtual-frame-test-pattern.png",
-      "mechanism": "underlay composite in the linear present target, only pixels still at background colour; ownership table keeps later frames refreshable",
-      "limits": "AP still draws no OSD (glyph_images=0); frame is static because the AP presents only on content change"
+    "old_probe_records_status": "historical only; root identity, receive-word semantics, fps, protocol compatibility and imaging prerequisite claims withdrawn",
+    "next": "read original dynamic-ID allocation parameters/return and passive UIPC statistics; no synthetic IDs",
+    "menu_probe": {
+      "shoot_observation": {
+        "frames": 10,
+        "distinct_view": [
+          2327376,
+          2441744
+        ],
+        "view_state": [
+          0,
+          1
+        ],
+        "node_installed": false,
+        "color_samples": [
+          1,
+          10
+        ]
+      },
+      "menu_raw_event": "0x150100f0",
+      "after_menu": [
+        {
+          "frame": 4,
+          "view_id": 195,
+          "state": 0,
+          "changed_pixels": false
+        },
+        {
+          "frame": 4,
+          "view_id": 195,
+          "state": 0,
+          "changed_pixels": false
+        },
+        {
+          "frame": 4,
+          "view_id": 195,
+          "state": 0,
+          "changed_pixels": false
+        },
+        {
+          "frame": 4,
+          "view_id": 195,
+          "state": 0,
+          "changed_pixels": false
+        },
+        {
+          "frame": 4,
+          "view_id": 195,
+          "state": 0,
+          "changed_pixels": false
+        },
+        {
+          "frame": 4,
+          "view_id": 195,
+          "state": 0,
+          "changed_pixels": false
+        }
+      ]
     },
-    "dff_messages": {
-      "run": "output/shoot-rcv-v2",
-      "count": 14,
-      "w0": "frame ticks, mostly +32 (≈31.25 fps)",
-      "w1": [
+    "default_mode_regression": true,
+    "a7c2_mode_regression": true,
+    "inhibit_finding": {
+      "early_query_failed": true,
+      "model_id": "0x96",
+      "native_map_record_absent": true,
+      "warning_is_true_lens_state_readback": false,
+      "native_failure_fallback": "viewUnified2+0x6e26ac returns1",
+      "model_tree_requests": [
+        "0x100",
+        "0xe3"
+      ],
+      "boot_option3_and_auxiliary_views_restore_model": false,
+      "late_state_proof": "v22 nine passive native-event return samples at frame3, edges96 through352, model0x96 record absent; no thread-stack observation in that run",
+      "next": "trace original ModelManager handler0x8a9f84 for event0x11004002 and current state; read same-process threads through bounded control command"
+    },
+    "latest_run": "output/full-table-v75",
+    "latest_run_rendered": false,
+    "model_wait_finding": {
+      "model_id": "0x0a",
+      "rtti": "10ModelMedia",
+      "native_record_state": "0x30000",
+      "native_business_state": 1,
+      "manager_state": "0x40000",
+      "manager_substate": "0x40301",
+      "original_prepare_action": 60,
+      "prepare_scan_returned": true,
+      "prepare_policy_returned": true,
+      "batch_event": "0x1200a041",
+      "batch_resources": [
+        18,
+        25,
+        196,
+        249
+      ],
+      "actual_guest_elapsed_ms_v29": 82046,
+      "pending_owners": "four ObjCntMgr instances; all four ObjMedia command slots replied",
+      "pending_source": "shoot-command-owner-v31",
+      "no_empty_ack": true,
+      "content_types": [
+        "ObjCntMgr",
+        "ObjCntMgrForSimulatedRec",
+        "ObjCntMgrForPcRemote",
+        "ObjCntMgrForSimulatedRec"
+      ],
+      "scope_of_types": "Native runtime RTTI only; type name alone does not establish initialize command behavior",
+      "next": "v37 targeted media-manager task submission and sync observations; preserve native pending jobs and replies",
+      "native_content_onstart_entered": 4,
+      "native_content_onstart_returned": 0,
+      "content_business_commands_observed": 0,
+      "media_config_endpoint": "0xcf016d",
+      "media_config_callback_entered_and_returned": true,
+      "media_config_held_semaphore_is_blocker": false,
+      "remaining_onstart_call_static_candidates": [
+        "media-manager initialization",
+        "EventWrapper Send to0x37807c"
+      ],
+      "candidate_status": "Neither candidate promoted to actual stalled call; v36 global sync trace bound was exhausted by unrelated media-config queries"
+    },
+    "preload_version_guard": {
+      "source": "fixed original ui.cpio .gnu.version_d by SONAME",
+      "candidate_requirements": {
+        "libdl.so.2": [
+          "GLIBC_2.4"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.4"
+        ],
+        "libpthread.so.0": [
+          "GLIBC_2.4"
+        ]
+      },
+      "clock": "ARM32 Linux3.0 syscall263, time32/CLOCK_MONOTONIC1",
+      "unsupported217_rejected_before_launch": true,
+      "baseline_builds_checked": [
+        "build-version-guard-original-v31",
+        "build-version-guard-a7c2-v31b"
+      ],
+      "baseline_build_first_error": "manual build used wrong a7c2-root path missing appFw; retained empty first dir, retried correct official ZIP root; not a product launcher failure"
+    },
+    "capture_table_dependency": {
+      "native_service_queue": "0x4015e",
+      "request_words": [
         0,
-        243596060
+        4096,
+        0,
+        0,
+        0,
+        0
       ],
-      "w2": 182856064,
-      "w3": 182856072,
-      "conclusion": "dataflow delivers frame ticks but no pixel buffers; missing image buffer, not ticks"
-    },
-    "next_anchor": {
-      "constant": "0x10000102 (AV-cam frame message, same as A7C2 yc_inject)",
-      "sites_in_libObj": 19,
-      "first_candidates": [
-        "0x77c5f0",
-        "0x5e1a58",
-        "0x432708"
+      "requested_bytes": 24,
+      "actual_osal_allocation_bytes": 52,
+      "native_wait_source": "libObj+0x8f278e; observed LR0x8f2793 and dynamic reply queues",
+      "native_table_bytes": "0x4014",
+      "native_table_use": "map through /dev/mem; 20-byte header and 1024x16B rows",
+      "backup_enabled": {
+        "id": "0x3c038a",
+        "actual": 1
+      },
+      "backup_max_count": {
+        "id": "0x3c04c2",
+        "actual": 1024
+      },
+      "original_init_symbol": "CapIdSync_Init; three args, not a generic zero-arg service bootstrap; not called speculatively",
+      "native_syncs_excluded": [
+        "0xcf016d queries returned",
+        "0x37807c sends returned",
+        "media-manager submit returned"
       ],
-      "note": "0x77c5f0 sits next to the existing display submit code (0x777935 present caller)"
+      "model_profile": "--capture-table-model plus --start-page shoot --shoot-view; defaults off",
+      "reserved_ram": "memrsv=128K@0x1ff00000; actual original reserve area2 log observed",
+      "model_implementation": "1000 maps one owned shared table; 1001/1002 paired access with owner guard and actual RAM checkpoint/readback; physical CP semantics unverified",
+      "v45": "original1000 response consumed and next1001 was refused; original FAIL retained",
+      "v46": "original1000 and1001 response consumed and next1002 was refused; original FAIL retained; v46 clear interpretation superseded by explicit paired access model",
+      "model_data_consumption_complete": true,
+      "physical_compatibility_verified": false,
+      "capture_verified": false,
+      "readback_source": "shoot-capture-table-readback-v48 and shoot-capture-table-late-v49",
+      "readback_sha256": "b468e8163614e6862c43231649e3f2cf62808f92c5fa45e4617f92a1b810cca7",
+      "onstart_return_count": 4,
+      "model96_created": true,
+      "lens_warning_removed_by_original_model": true,
+      "latest_late_model": {
+        "run": "shoot-remote-dynamic-id-v53",
+        "id": "0x126",
+        "name": "ModelRemoteAsync",
+        "vtable": "0x13bada8",
+        "record_state": "0x30000",
+        "business_state": 1,
+        "guest_observed_elapsed_ms": 123382,
+        "native_complete": false,
+        "remote_start_seen": false,
+        "ordinary_remote_start_return": false,
+        "queued_behind_model": "0xf5/0x120f502c",
+        "ordinary_remote_last_stage": "infra0x3a2a60 enter; sinks/config returned; module helper not entered",
+        "remote_stop": "module helper 0x3a1c90 entered and blocked inside osal_snd_sync_msg(0x94016a) for module 0x16a libInfraRemote.so; infra wrapper 0x3a2a60 not yet returned either"
+      },
+      "im_loader": {
+        "im_elf_sha256": "3fd399b62b468c0302b370362378a3719df6b7d68ff9f6e1c09312a84beeabbf",
+        "manager_queue": "0x94016a",
+        "sync_callback": "0x986d",
+        "load_handler": "0xb7dc",
+        "message_code_load": "0x940021",
+        "module_libInfraRemote": "0x16a",
+        "libInfraRemote_sha256": "83a7e9738bebd2466c0ed1bf09fdae1b1398bec675d0993c31768c7a806fb98c",
+        "uipc_queue_16A_at_dump": "M=0 C=1 S=1: callback registered, no message queued at dump; earlier \"one unprocessed message\" reading was a column misread and is corrected here",
+        "dynamic_ids_free": "SEM 8106/8192, MSGQ 3886/4096 at dump"
+      }
     },
-    "send_api": {
-      "DataflowInfraSender::SendASync GOT": "0x13d7d64",
-      "DataflowInfraCh::infraGetPin GOT": "0x13d7ce4",
-      "DataflowInfra_relocations_in_libObj": 148
+    "smp_investigation": {
+      "summary": "secondary CPU release works; Sony rt kernel corrupts sched objects when CPU1 runs local-timer path; single-CPU unaffected",
+      "latest_run": "output/smp-final-regress-v69"
+    },
+    "full_services_boot": {
+      "insight": "The original libIMDB.so table has NO default-vs-qemu target difference; the 10 excluded services + liro.ko were removed by our own AP-only patch (A7C2 legacy). Restoring them (minus liro) brings up the full service set: 72 initializers incl. UsbBusPower/BusPower/Hotplug/InfraCrypt/NetServiceTethering (nonfatal unknown-symbol warnings), infra_input_init, jiritsu, GetLog.",
+      "mechanism": "menu_build full_services=True patches exactly the /usr/kmod/liro.ko IMDB entry (targets 0x7fffffff -> 0x7ffffffd, pinned NOLIRO_IMDB_SHA d43a46ba57d7e364e691d5468d79c99b5eca9709a314b28ead9a6381a064eefa) and overlays it over the base cpio",
+      "current_state": "AP boots fully clean (v74/v75 ok=true); sits at ViewRootPowerSw 0xa1 state1 black; CaptureId table model works under full services; MENU raw event does not transition the PowerSw view — a power-on event/switch state is the missing trigger; forced --shoot-view hits a separate font-pipeline NULL crash under full resources (v73)",
+      "next": "1) find power-switch input source (infra_input key table / GPIO state at boot) and inject the original power-on event to drive PowerSw -> shooting main page; 2) fix or bypass the font NULL for the forced shoot-view path; 3) then MENU entry per A7C2 input model",
+      "input_findings": "0x15010000-FF raw sweep: no id drives PowerSw out of state1 (power-switch state is hardware-model-sourced, not a trigger id); infra_input_init is a logging stub in libObj; kernel INPUT_EVDEV=y + cpio dev/input dir exist but no /dev/input reader strings in libObj — Sony keyscan path needs its own device model",
+      "v76": "menu mode verified under full services",
+      "v77": "full-services latent AP crash: bad-pte/exit_mmap on stream mappings even without shoot-view request — suspected DMM/stream DMA page-table corruption under full services; next: trace stream/DMM allocations vs page tables, or bound the window to pre-crash operation"
+    },
+    "release_closure": {
+      "original_shooting_page_display_verified": true,
+      "display_evidence": [
+        "shoot-menu-final-v84",
+        "full-ondemand-v80"
+      ],
+      "original_menu_full_services_verified": true,
+      "menu_evidence": "full-menu-v76",
+      "shooting_to_menu_verified": false,
+      "capture_verified": false,
+      "final_guest_library_sha256": "6dba7aa1d94e234ce9e428186678bc546a4119862a76026763a047e6c2e89c87",
+      "final_guest_library_matches_successful_v84": true,
+      "host_tests": "53 passed + 21 subtests; real pinned A7C2 resource ZIP; no skips",
+      "unsafe_menu_open_experiment": "removed after v96/v99/v100 original AP exceptions; failures remain archived",
+      "screenshots": {
+        "shooting-main.png": "441738970205e1661c98879821d64421686b7c3ab9cd7de434bab951c1f5b8fd",
+        "menu.png": "d7f0bdd045e650cf50f29b35095dafeba37890d3ba9d1ccbd0b16ba7681441e7"
+      },
+      "scope": "Original AP LCD output only; no physical device, capture, recording, or claim of physical MENU transition."
     }
   },
   "regression_after_probes": {

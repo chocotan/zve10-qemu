@@ -2,7 +2,17 @@
 
 在 Linux 电脑上运行 Sony ZV-E10 2.03 原厂系统，显示原厂菜单。**默认使用 ZV-E10 原菜单，不需要 A7C2 固件或资源。** A7C2 原资源菜单是显式启用的可选实验模式。
 
-当前可以启动原系统命令行、显示原厂菜单并通过原 UI 线程导航。尚不能进入可用的拍摄主页面，没有实时取景、拍照或录像；传感器、镜头和成像处理器尚未模拟。
+当前可以启动原系统命令行、显示原厂菜单并通过原 UI 线程导航。显式拍摄页模式已能显示原 AP 绘制的拍摄主界面（相机/P、`XAVC S HD` 与曝光图标）；没有实时取景、拍照或录像，传感器、镜头和成像处理器尚未模拟。
+
+**原拍摄主界面（`shoot-menu-final-v84`）**
+
+![原拍摄主界面](docs/images/shooting-main.png)
+
+**原厂菜单（全服务 `full-menu-v76` 验收截图）**
+
+![原厂菜单](docs/images/menu.png)
+
+两张图都是原 AP 的 640×480 LCD 输出，不是主机自绘界面。它们分别证明拍摄页显示与原菜单模式；**拍摄页按 MENU 进入菜单的同次闭环仍未通过**，不能把两张图理解为该切换已经验收。
 
 ## 启动
 
@@ -15,6 +25,20 @@
 ```
 
 窗口显示原 AP 产生的640×480帧；方向键或窗口方向按钮经原 EventManager 和原 UI 线程处理。原版预览只开放方向导航，不确认设置动作。原菜单树不新增 `New Menu` 行，不读取 A7C2 资源。
+
+**实验：原拍摄主界面**
+
+```bash
+./start-zve10-menu.sh --start-page shoot --shoot-view --capture-table-model
+```
+
+该路径通过原 RootSelector 请求 `ViewStlrec(0xc3)`，CaptureId 表模型只提供挥发性 RAM 事务。启动仍可能遇到原 AP 的非确定性异常；失败会保留在独立输出目录。拍摄页 MENU 探测使用原事件 `0x150100f0`，当前只记录实际消费与像素，不把事件入队记为切页成功。
+
+恢复原厂服务的菜单模式也已单独通过：
+
+```bash
+./start-zve10-menu.sh --full-services
+```
 
 **原系统命令行**
 
@@ -85,7 +109,7 @@ cd zve10-qemu-linux-x86_64-v1
 
 包内 `BUNDLE-MANIFEST.json` 记录每个文件的尺寸与 SHA-256，`start.sh` 会先检查 Linux x86_64、Python 3.11+ 与 Pillow/pyelftools/capstone（窗口另需 Tk）。主机仍需普通 Python 依赖，包不自带 Python。
 
-包很大（约 720 MiB，解压约 1.3 GiB），含原厂固件，只作本机研究交付，不进入 Git；`release/` 已被忽略。拍摄主页面/取景/拍照仍未实现。
+包很大（约 720 MiB，解压约 1.3 GiB），含原厂固件，只作本机研究交付，不进入 Git；`release/` 已被忽略。既有 v1 一键包仍是菜单版，未包含本轮拍摄页改动；取景/拍照仍未实现。
 
 Linux x86_64、Python 3.11+、host GCC、Pillow、pyelftools、capstone；窗口模式另需Tk/X11，测试使用pytest。ZV-E10固件、Sony GPL Linux、QEMU11.1.2及Bootlin ARMv7工具链的来源和编译步骤见 [docs/setup.md](docs/setup.md)。
 

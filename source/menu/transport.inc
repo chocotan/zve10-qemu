@@ -430,14 +430,35 @@ static void *ne_transport_control(void *unused)
             phase = "key_write";
             if (ne_transport_line("NE_KEY_SENT {\"seq\":%" PRIu32 ",\"function\":%" PRIu32 "}\n",
                                   ticket, function)) goto failed;
+#if NE_SHOOT_VIEW
+        } else if (!strcmp(line, "SHOOTREQ")) {
+            ne_shootreq_dispatch();
+            if (ne_transport_line("NE_SHOOTREQ_OK\n")) goto failed;
+#endif
+#if NE_CAPTURE_TABLE_MODEL
+        } else if (!strcmp(line, "UIPC")) {
+            if (retained.pixels || ne_dump_uipc()) { errno = EIO; goto failed; }
+        } else if (!strcmp(line, "CAPTABLE")) {
+            if (retained.pixels || ne_capture_table_model_snapshot()) { errno = EBUSY; goto failed; }
+#endif
+#if NE_SHOOT_PROBE
+        } else if (!strcmp(line, "THREADS")) {
+            if (retained.pixels) { errno = EBUSY; goto failed; }
+            ne_dump_threads();
+#endif
         } else if (!strcmp(line, "STATE")) {
             pthread_mutex_lock(&ne_transport_mutex);
             struct ne_observation now = ne_observed;
             uint64_t frame_now = ne_observed_frame;
             pthread_mutex_unlock(&ne_transport_mutex);
+            /* Original ARM32 Linux 3.0 uses time32 syscall263; libc clock_gettime would require GLIBC_2.17. */
+            int32_t guest_time[2];
+            if (syscall(263, 1, guest_time) || guest_time[0] < 0 || guest_time[1] < 0 || guest_time[1] >= 1000000000)
+                goto failed;
+            uint64_t guest_ms = (uint64_t)guest_time[0] * 1000u + (uint32_t)guest_time[1] / 1000000u;
             if (ne_transport_line("NE_SNAPSHOT {\"frame\":%" PRIu64 ",\"view\":%" PRIu32
-                ",\"view_state\":%" PRIu32 ",\"last_input\":%" PRIu32 "}\n",
-                frame_now, now.view, now.view_state, now.last_input)) goto failed;
+                ",\"view_state\":%" PRIu32 ",\"last_input\":%" PRIu32 ",\"guest_ms\":%" PRIu64 "}\n",
+                frame_now, now.view, now.view_state, now.last_input, guest_ms)) goto failed;
         } else if (!strncmp(line, "TAILIN ", 7)) {
             char *end; unsigned long ident = strtoul(line + 7, &end, 16);
             if (retained.pixels || end == line + 7 || *end) { errno = EPROTO; goto failed; }

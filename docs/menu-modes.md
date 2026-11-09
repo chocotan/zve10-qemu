@@ -76,37 +76,24 @@ python3 scripts/package-ready.py --out release/zve10-qemu-linux-x86_64-v1.tar.gz
 
 包不包含 Windows/macOS 可执行文件；Linux x86_64 仍是唯一目标平台，且包含原厂固件，按本机研究用途分发。
 
-## 拍摄主页面（未完成，已有探测结论）
+## 拍摄主页面（原页已绘制，完整状态与导航未完成）
 
-用户目标是拍摄主页面，不是菜单入口。当前探测（`--start-page shoot`）：
+README展示的两张截图分别来自拍摄页显示与原菜单模式验收，不是同一次MENU切换。
 
-- AP 会进入拍摄页状态（view slot `0xa0`），但只清屏：3 次 framebuffer 绘制、**0 次字形绘制**，最终帧为纯色，UI 线程停在 `osal_wai_sem_tmo`（sem `0x170604c`）。说明它在等取景/成像数据，才会绘制 OSD。
-- 合成功能事件（`0x13000000|(0xa0<<12)|f`）会被触发表重映射为 `0x11012001` 等通用 trigger，**原 AP 消费次数为 0**，页面不跳转。
-- 改投真实输入表 id（`0x150100f0/0x15010040/...`）时，`ViewBase::Main` 确实被调用（59 次），但 view 与像素均不变，说明这些 id 不在拍摄页的可用映射里。
+`--start-page shoot` 仅观测原启动；首槽 `0xa0` 实际是 `ViewRoot`，不能当拍摄页。显式请求原静态拍摄视图：
 
-补充探测（`--map-probe`）：调用原 `ViewBase::transformByTriggerTable` 对输入表里的 235 个候选 id 做映射，**全部返回同一个常量 trigger `0x11012005`**，说明拍摄页的这个视图根本不做 trigger 变换（变换函数的前置守卫返回 0，直接走常量分支）。
+```sh
+./start-zve10-menu.sh --start-page shoot --shoot-view --headless --out output/shoot-stlrec-new
+```
 
-因此拍摄页的按键不能靠“合成 trigger 表 id”实现，必须在更下层用原 `InputService` 的 24 字节 `_InfraInputEvent`。
+`--out` 必须是新目录。`--shoot-view` 校验真实 RootSelector 与原 thunk，在原 UI 线程请求 `0xc3=ViewStlrec`，由原 ViewManager 创建、消费和绘制。新增 GL_LINEAR 采样后，`shoot-linear-v11` 已读回原 `XAVC S HD`、曝光图标和日文镜头收纳警示；测试图案未启用。普通拍摄 HUD、镜头模型及 MENU 进退尚未通过，`shooting_page_verified=false`。
 
-反编译 `sub_11fbbc(service, _InfraInputEvent*, mode)` 已给出完整路径：它先 `snd_InfraInputEvent_to_InputServant(evt)` 做 keymode/repeat 记账，再 `InputService::createEvent(evt->+0, 4)` 查输入表生成事件、附加参数 `0x1b/0x1c/0x20`，最后 `pushFilterEvent`。`service` 参数在函数体内未被使用（单例取自全局）。
+显式 `--capture-table-model` 可在上述命令追加。它使用原内核保留的独立guest RAM提供真实共享CaptureId表和本机访问事务；v47–v50已四个原内容管理OnStart返回，原抑制模型创建后镜头警示自然消失，原相机/P图标与XAVC S HD显示。表/提交副本经guest/QMP独立读回exact。该模式默认关闭、无持久存储，不表示物理CP、完整HUD或导航通过；详见 [表服务合同](capture-table-model.md)。
 
-**但仍未打通**：调用该函数会阻塞在 `snd_InfraInputEvent_to_InputServant`（等 InputServant 握手），导致后续不再产生帧、探测超时（从控制线程投递同样阻塞，因此不是线程归属问题）。
+收尾复验：`shoot-menu-final-v84` 与原服务补齐的 `full-ondemand-v80` 均实际显示无镜头警示的拍摄页；`full-menu-v76` 另行验证 `--full-services` 下原菜单17帧与方向往返。`shooting_page_display_verified` 只表示原LCD出现拍摄页内容，`shooting_to_menu_verified` 独立记录拍摄页MENU切页，当前仍为false。最终安全源码生成的guest DSO与v84逐字节相同（SHA `6dba7aa1…e6c2e89c87`）；v101/v102黑帧是保留的非确定性启动结果，不回填为显示通过。
 
-尾段绕过尝试的取证：
-- `InputService::createEvent(0x11c89b)` **不使用 this**（入口即 `movs r0,#0x10`），可以直接调用建事件；
-- `InputService::pushFilterEvent(0x11e5d5)` **使用 this**（`this+0x10` 作锁），因此仍需真正的 InputService 单例；
-- 该单例在 `sub_11fbbc` 中取自 libObj 全局（`*dat_13db2ac`），尚无稳定取法。
+v93–v100的直接OPENVIEW/UI排队/RootSelector菜单实验未通过，其中v96/v99/v100出现原AP异常；危险实验代码已移除，原失败收据保留。不能从拍摄页直接打开 `0xba` 冒充原厂MENU动作。
 
-已找到单例：libObj 全局 `object_base+0x13dba70`（由 `sub_11fbbc` 的字面量基址换算）。用该单例直接调用 `createEvent(0x11c89b, id, 4)` + `pushFilterEvent(0x11e5d5, ev)` 的尾段注入实测：
+此前“约31.25fps消息节拍”“没视频帧就不能画OSD”“0xa0就是拍摄页”的推断均撤回：旧接收探针误将消息指针输出槽当消息正文。修正后按原消息长度读取；详见 [拍摄页分析](shoot-model-assessment.md) 与 [当前实施顺序](shoot-main-plan.md)。旧错误/失败保留在历史中，不提升或回填。
 
-- 事件确实进入了原分派（`NE_BASEMAIN` 从 0 跳到 53 次），
-- 但注入调用本身**不返回**（无 `NE_TAIL_INJECTED`），控制线程卡在 `pushFilterEvent` 内，
-- 期间只发生 5 次 framebuffer 绘制。
-
-结合早先“UI 线程停在 `osal_wai_sem_tmo` 等取景数据”，可以判定：**拍摄页在取景数据到达前，连输入分派都不会完成**。因此“只做按键与页面导航、不接取景源”在拍摄页上不可行——两者被同一个等待绑在一起。
-
-结论：要么接入最小功能取景源（`virtual-functional-camera-v1`，用户在 AGENTS 中已授权过该模式的边界），要么接受拍摄页按键/导航暂不可验。
-
-取景源仍按用户选择暂不实现，所以即使按键接通，拍摄页背景仍为纯色。
-
-探测开关：`--start-page shoot`、`--key-probe`、`--id-probe`。它们只用于取证，不改变默认启动行为。
+彩条仅是显示输出上的诊断图案，需追加 `--test-pattern`，不是 DMM/VDT 成像输入。其它事件探针保持显式启用；`--shoot-view --key-probe` 记录拍摄页原 MENU 表事件的消费结果，不把队列返回当导航通过。

@@ -12,7 +12,7 @@ struct ui_gemini_rect { int16_t x, y, w, h; };
 struct ui_gemini_surface {
     unsigned char *pixels;
     size_t capacity;
-    unsigned width, height, stride, format, layout; /* stride in bytes */
+    unsigned width, height, stride, format, layout, filter; /* filter: 0 nearest, 1 linear */
 };
 struct ui_gemini_state {
     struct ui_gemini_rect viewport, scissor; /* scissor is native GL bottom-origin */
@@ -24,7 +24,7 @@ static inline int ui_gemini_span(const struct ui_gemini_surface *s, size_t *span
 {
     if (!s || !s->pixels || !s->width || !s->height || s->width > 8192 ||
         s->height > 8192 || (s->format != 0 && s->format != 3) ||
-        s->layout > UI_GEMINI_MORTON_TOP_DOWN) return -5;
+        s->layout > UI_GEMINI_MORTON_TOP_DOWN || s->filter > 1) return -5;
     unsigned bpp = s->format == 0 ? 2 : 1, rows = s->height;
     if (s->stride < s->width * bpp || s->stride > 8192 * bpp) return -5;
     if (s->layout != UI_GEMINI_LINEAR) {
@@ -81,7 +81,7 @@ static inline int ui_gemini_edge(double edge, unsigned limit)
 }
 
 /* Internal rectangle implementation, also used for the native float quad ABI.
- * shortcut: positive axis-aligned affine and nearest in-bounds sampling only;
+ * shortcut: positive axis-aligned affine with in-bounds/clamp-to-edge sampling only;
  * extend from actual captures when another transform/filter/address mode occurs.
  * Texture mode is explicit: caller must validate the live shader mapping.
  * Return 0 on synchronous success (including fully clipped), -5 without writes.
@@ -142,7 +142,29 @@ static inline int ui_gemini_draw(struct ui_gemini_surface *dst,
             /* Clamp the last texel against floating-point endpoint rounding. */
             if (ix >= (unsigned)sr->w) ix = sr->w - 1;
             if (iy >= (unsigned)sr->h) iy = sr->h - 1;
-            ui_pixel_get(src->pixels + ui_gemini_offset(src, sr->x + ix, sr->y + iy), src->format, c);
+            if (!src->filter) {
+                ui_pixel_get(src->pixels + ui_gemini_offset(src, sr->x + ix, sr->y + iy), src->format, c);
+            } else {
+                double tx = sr->x + ((px + 0.5 - left) / (right - left)) * sr->w - 0.5;
+                double ty = sr->y + ((py + 0.5 - top) / (bottom - top)) * sr->h - 0.5;
+                int lx = (int)tx, ly = (int)ty;
+                if (lx > tx) --lx;
+                if (ly > ty) --ly;
+                double fx = tx - lx, fy = ty - ly;
+                unsigned texels[4][4];
+                for (unsigned k = 0; k < 4; ++k) {
+                    int sx = lx + (int)(k & 1), sy = ly + (int)(k >> 1);
+                    if (sx < 0) sx = 0;
+                    if (sy < 0) sy = 0;
+                    if (sx >= (int)src->width) sx = (int)src->width - 1;
+                    if (sy >= (int)src->height) sy = (int)src->height - 1;
+                    ui_pixel_get(src->pixels + ui_gemini_offset(src, (unsigned)sx, (unsigned)sy),
+                                 src->format, texels[k]);
+                }
+                for (unsigned k = 0; k < 4; ++k)
+                    c[k] = (unsigned)((texels[0][k] * (1 - fx) + texels[1][k] * fx) * (1 - fy) +
+                                      (texels[2][k] * (1 - fx) + texels[3][k] * fx) * fy + 0.5);
+            }
             if (mode == UI_GEMINI_ALPHA_MASK) {
                 for (unsigned i = 0; i < 3; ++i) c[i] = color[i];
                 c[3] = ui_scale(c[3], color[3]);
@@ -202,7 +224,7 @@ static inline int ui_slow_clear_pixels(unsigned char *pixels,size_t span,const u
     if (!scissor || scissor[0]>640 || scissor[1]>480 || scissor[2]>640-scissor[0] ||
         scissor[3]>480-scissor[1]) return -5;
     if (!scissor[2] || !scissor[3]) return 0;
-    struct ui_gemini_surface dst={pixels,span,640,480,1280,0,UI_GEMINI_MORTON_BOTTOM_UP};
+    struct ui_gemini_surface dst={pixels,span,640,480,1280,0,UI_GEMINI_MORTON_BOTTOM_UP,0};
     struct ui_gemini_state state={{0,0,640,480},{0},0,0,0,1,1};
     struct ui_gemini_rect rect={(int16_t)scissor[0],(int16_t)(480-scissor[1]-scissor[3]),
                               (int16_t)scissor[2],(int16_t)scissor[3]};
