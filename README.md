@@ -1,105 +1,94 @@
 # ZV-E10 QEMU 模拟器
 
-在 Linux 电脑上启动 Sony ZV-E10 的原厂系统，并显示原厂菜单，无需连接相机。项目参考 [A7C II QEMU](https://github.com/chocotan/a7c2-qemu) 的软件绘图方式实现。
+在 Linux 电脑上运行 Sony ZV-E10 2.03 原厂系统，显示原厂菜单。**默认使用 ZV-E10 原菜单，不需要 A7C2 固件或资源。** A7C2 原资源菜单是显式启用的可选实验模式。
 
-目前可以启动到命令行，并将原厂菜单保存为 640×480 图片。菜单里的布局、图标、文字和字体都来自相机固件。
+当前可以启动原系统命令行、显示原厂菜单并通过原 UI 线程导航。尚不能进入可用的拍摄主页面，没有实时取景、拍照或录像；传感器、镜头和成像处理器尚未模拟。
 
-![ZV-E10 原厂菜单](docs/images/menu.png)
+## 启动
 
-## 可以做什么
+以下命令在本目录执行。首次使用先完成 [准备与编译](docs/setup.md)；用户固件、工具链和生成镜像不包含在 Git 中。本机已准备的运行文件位于本目录自己的 `work/`，不依赖其它研究仓库。
 
-- **启动原厂系统**：运行 ZV-E10 2.03 的相机程序，进入串口命令行。
-- **显示原厂菜单**：用软件绘图生成 640×480 菜单画面，包含原厂图标、日文文字、选中条和设置值。
-- **保存菜单图片**：自动等待菜单加载，将画面保存为 PNG，供查看和研究。
-- **查看运行日志**：通过终端观察系统启动、程序加载和绘图过程。
-
-目前没有可点击的相机窗口，按键、拨盘和其他菜单页面的交互还未完成。没有取景、拍照和录像功能，也没有模拟传感器、镜头和负责成像的处理器。
-
-## 第一次启动前
-
-需要 Linux x86_64、Python 3、Pillow、GCC、Make、Ninja、Meson、cpio、7-Zip、e2fsprogs 和 fakeroot。编译 QEMU 还需要 GLib 和 Pixman 开发包，编译相机内核和绘图程序需要 ARM 交叉工具链。
-
-固件、Linux 源码和工具链需要自行下载，仓库不包含这些大文件。
-
-| 文件 | 下载地址 | 放置位置 |
-| --- | --- | --- |
-| ZV-E10 2.03 固件更新包 | [Sony 官方下载页面](https://www.sony.com/electronics/support/e-mount-body-zv-e-series/zv-e10/downloads) | 仓库根目录下的 `Update_ZVE10V203.dmg` |
-| Sony Linux 源码 | [linux-kernel.tar.gz](https://prodgpl.blob.core.windows.net/download/DI/ZV-E10_Ver.2.02/linux-kernel.tar.gz) | `work/linux-kernel.tar.gz` |
-| QEMU 11.1.2 源码 | [qemu-11.1.2.tar.xz](https://download.qemu.org/qemu-11.1.2.tar.xz) | `work/qemu-11.1.2.tar.xz` |
-| ARM 交叉工具链 | [Bootlin armv7-eabihf，2020.08-1](https://toolchains.bootlin.com/downloads/releases/toolchains/armv7-eabihf/tarballs/armv7-eabihf--glibc--stable-2020.08-1.tar.bz2) | `work/armv7-toolchain.tar.bz2` |
-
-固件请使用 **ZV-E10 2.03**，不要使用 ZV-E10 II 的更新包。Linux 源码由 Sony 放在 `ZV-E10_Ver.2.02` 目录下，内核版本为 3.0.27。
-
-下载并解压后，启动程序使用以下目录：
-
-```text
-zve10-qemu/
-├── Update_ZVE10V203.dmg
-└── work/
-    ├── armv7-eabihf--glibc--stable-2020.08-1/
-    ├── qemu-src/
-    ├── linux-kernel/
-    ├── kbuild-clean/
-    ├── kbuild-ui/
-    ├── usr/
-    ├── initramfs-camera/
-    └── initramfs-ui/
-```
-
-安装好依赖、解包工具和 ARM 工具链后，用以下两个命令准备固件和启动文件系统：
+**默认：原厂菜单窗口**
 
 ```bash
-python3 scripts/prepare-firmware.py --fwtool-python work/fwtool-venv/bin/python
-fakeroot -s work/fakeroot.state python3 scripts/prepare-initramfs.py
+./start-zve10-menu.sh
 ```
 
-接下来应用内核与 QEMU 补丁、编译内核和本地模块。完整步骤见 [准备与编译](docs/setup.md)。这套流程已从下载的源码和更新包跑通，能启动到命令行并生成上图的菜单。
+窗口显示原 AP 产生的640×480帧；方向键或窗口方向按钮经原 EventManager 和原 UI 线程处理。原版预览只开放方向导航，不确认设置动作。原菜单树不新增 `New Menu` 行，不读取 A7C2 资源。
 
-## 运行
-
-准备好固件文件和编译产物后，在仓库根目录执行。
-
-启动到命令行：
+**原系统命令行**
 
 ```bash
 ./start-zve10.sh
 ```
 
-启动原厂应用并导出菜单图片：
-
-```bash
-python3 scripts/capture-menu.py
-```
-
-等待菜单文字加载完成后，程序会保存图片并关闭自己启动的模拟器。终端会打印图片路径；打开其中的 `preview_png` 即可查看菜单。
-
-生成的图片位于 `output/`，文件名包含帧号和像素摘要，例如 `zve10-menu-frame19-d68731fe.png`。
-
-只启动原厂应用、保留串口日志而不自动截图：
+**原厂 UI 串口运行 / 原截图流程**
 
 ```bash
 ./start-zve10-ui.sh
+python3 scripts/capture-menu.py
 ```
 
-## 为了让原厂系统运行，做了哪些适配
+这是两个独立启动方式，不需要同时运行；`start-zve10-ui.sh` 保留原串口启动行为。
 
-1. **补上相机的启动硬件**：为 QEMU 增加 ZV-E10 机型，配置内存、ARM 处理器、中断控制器、串口和相机使用的九路定时器，让原厂 Linux 能正常启动、计时和唤醒线程。
-2. **修正旧内核的编译和启动问题**：适配 ARM 交叉编译器，修复启动参数传递以及线程退出时的内存写入问题，使原厂应用能完成初始化。
-3. **准备相机运行环境**：从固件更新包提取系统文件、相机程序和资源，制作启动文件系统，并调整应用加载配置，使菜单能在没有成像硬件的情况下运行。
-4. **用 CPU 完成菜单绘图**：保留原厂菜单布局、字体和图片资源，在软件中完成菜单需要的矩形、纹理、文字透明度、清屏和图像复制操作。
-5. **补上资源解码和画面输出**：用 Sony 开源代码中的算法解压原厂图片，处理原厂画面缓冲和完成通知，等文字、图标加载后再导出菜单图片。
+## 可选：A7C2 原资源菜单
 
-这些适配让原厂程序自己生成菜单内容。截图不是重新绘制的仿制界面。
+将已提供的 `a7c2-menu-resources-2.01-v1.zip` 放到被忽略的 `incoming/`，无需自己整理十个文件：
 
-## 当前限制
+```bash
+./start-zve10-menu.sh \
+  --a7c2-assets incoming/a7c2-menu-resources-2.01-v1.zip
+```
 
-- 已支持原厂菜单首页的图片输出，其他页面和按键操作尚未验证。
-- 绘图由 CPU 完成，只实现了当前菜单需要的格式和操作，遇到不支持的绘图命令会停止并输出日志。
-- 没有模拟传感器、镜头或负责成像的处理器，因此没有取景、拍照和录像功能。
-- 所有操作都在电脑上的模拟器中进行，不需要给真实相机刷机。
+启动器会校验ZIP白名单、尺寸和固定SHA，将素材导入本机 `work/`。原设置5页增加一个新行，ENTER进入八分类空菜单，Esc/MENU返回原页并恢复焦点。窗口 × 正常关闭控制线程及 QEMU。原资源不上传 Git。
 
-## 源码和许可
+新增行文案由本适配在 guest 内用 A7C2 原字体绘制到该行标签框（原 AP 只绘制已有资源布局的标签），因此**不经过原标签管线**；其它行文案例外不变。旧报告里“原标签管线绘制标题”的说法不可复现，该否定结论保留在 [机器验收](docs/menu-validation.json)。
 
-项目代码、QEMU 修改、内核补丁及测试代码保存在仓库中。Sony 固件和解包后的相机程序由使用者自行准备。
+也可先导入到固定位置，再单独启用：
 
-第三方源码的来源和许可证见 [THIRD-PARTY.md](THIRD-PARTY.md)。
+```bash
+python3 scripts/menu_resources.py \
+  --bundle incoming/a7c2-menu-resources-2.01-v1.zip \
+  --destination work/a7c2-menu-assets
+./start-zve10-menu.sh --a7c2-menu
+```
+
+`--a7c2-menu` 不存在默认素材时明确报错；不会悄悄回到原版或下载资源。不加该选项、不传素材时始终为原版。
+
+这里复用 A7C2 2.01 的原布局、图标、中文文案及字体，由同一 ZV-E10 AP 内的可读 C 合成；不会执行 A7C2 的64位程序。新菜单内容区为空，没有设置写回或完整菜单 SDK。详见 [菜单模式与开发接口](docs/menu-modes.md) 与 [机器验收](docs/menu-validation.json)。
+
+## 验证与输出
+
+默认每次创建独立 `output/menu-<id>/`，保存构建收据、原输入消费、帧摘要、PNG和正常退出结果。可用 `--out` 指定一个尚不存在的目录。
+
+```bash
+./start-zve10-menu.sh --headless
+xvfb-run -a -s '-screen 0 800x640x24 -nolisten tcp' \
+  ./start-zve10-menu.sh --self-test
+```
+
+上述两条都是**原版**检查。可选模式检查在同一命令追加 `--a7c2-assets incoming/a7c2-menu-resources-2.01-v1.zip`。无图形会话时用 `--headless`，有图形会话可直接运行默认窗口。
+
+[功能与验收记录](docs/menu-validation.json) 分别记录原版和A7C2模式；普通交互正常关闭与完整语义验收分账，不把启动成功当作拍摄功能通过。
+
+## 一键运行包（本机交付）
+
+`release/zve10-qemu-linux-x86_64-v1.tar.gz` 由 `scripts/package-ready.py` 从本目录已验文件生成，包含：源码、编译好的 QEMU 与逐项核验的动态库闭包、内核与已准备启动 CPIO、原三个业务 ELF、ARMv7 工具链、**官方 ZV-E10 2.03 更新包**，以及可选的 A7C2 最小资源 ZIP。
+
+```bash
+tar -xzf zve10-qemu-linux-x86_64-v1.tar.gz
+cd zve10-qemu-linux-x86_64-v1
+./start.sh              # 原版菜单（默认）
+./start-a7c2.sh         # 可选 A7C2 菜单
+./start.sh --headless   # 无桌面时的可验证运行
+```
+
+包内 `BUNDLE-MANIFEST.json` 记录每个文件的尺寸与 SHA-256，`start.sh` 会先检查 Linux x86_64、Python 3.11+ 与 Pillow/pyelftools/capstone（窗口另需 Tk）。主机仍需普通 Python 依赖，包不自带 Python。
+
+包很大（约 720 MiB，解压约 1.3 GiB），含原厂固件，只作本机研究交付，不进入 Git；`release/` 已被忽略。拍摄主页面/取景/拍照仍未实现。
+
+Linux x86_64、Python 3.11+、host GCC、Pillow、pyelftools、capstone；窗口模式另需Tk/X11，测试使用pytest。ZV-E10固件、Sony GPL Linux、QEMU11.1.2及Bootlin ARMv7工具链的来源和编译步骤见 [docs/setup.md](docs/setup.md)。
+
+当前菜单适配绑定已验证原ELF/原profile的SHA和ABI。不同主机重新构建的QEMU/内核若字节不同，需要先验证新构建来源，不能删掉守卫冒充兼容。
+
+项目代码与必要软件图形模块在 `source/`，构建/运行工具在 `scripts/`，检查在 `tests/`。Sony原件与生成DSO/CPIO保存在忽略的 `incoming/`、`work/` 和 `output/`，不随源码发布。第三方来源及许可见 [THIRD-PARTY.md](THIRD-PARTY.md)。

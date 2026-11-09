@@ -2,6 +2,9 @@
 /work/
 /incoming/
 /output/
+/runtime/qemu-libs/
+*.zip
+/release/
 *.dmg
 *.exe
 *.tar.gz

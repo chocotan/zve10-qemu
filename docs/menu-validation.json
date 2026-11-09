@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "product": "final/zve10-qemu",
+  "date": "2026-11-09",
+  "original_mode_default": {
+    "entry": "./start.sh",
+    "a7c2_resources_read": false,
+    "tree_modified": false,
+    "run": "output/original-settled-v6",
+    "frames": 15,
+    "native_inputs_consumed": 4,
+    "visible_window_rgb_exact": true,
+    "normal_exit": "QMP0, no VM signal, owner gone",
+    "status": "passed",
+    "frames_note": "captures until two consecutive frames match, so async font timing cannot be mistaken for a regression",
+    "comparison": "symmetric DOWN+UP on both sides, each side settled to two consecutive identical frames"
+  },
+  "a7c2_optional_mode": {
+    "entry": "./start-a7c2.sh (or --a7c2-assets <zip>)",
+    "resource_bundle": "a7c2-menu-resources-2.01-v1.zip",
+    "run": "output/a7c2-label-v33",
+    "row_added": true,
+    "row_highlight_visible": true,
+    "enter_opens_owned_menu": true,
+    "category_switch": true,
+    "menu_returns": 2,
+    "parent_focus_restored": true,
+    "entry_title_verified": true,
+    "entry_title_note": "owned row text is drawn in-guest from the original A7C2 font at the fixed row box (24,332); the AP label pipeline is not used for this text",
+    "visible_window_rgb_exact": true,
+    "normal_exit": "QMP0, no VM signal, owner gone",
+    "status": "partial",
+    "stable_across_runs": [
+      "output/a7c2-label-v32",
+      "output/a7c2-label-v33",
+      "output/a7c2-label-v34"
+    ]
+  },
+  "reproducibility_finding": {
+    "previous_report": "a7c2-re 2026-11-07-zve10-native-menu-entry native-window-v14",
+    "re_run": "a7c2-re report output/repro-v14-now",
+    "same_inputs": true,
+    "result": "entry title check failed on re-run, so the earlier title success was timing dependent, not a stable contract"
+  },
+  "verified_elsewhere": {
+    "node_append_and_clone": "original init/clone path, pins on 4 original prologues",
+    "input_model": "original EventManager function events; DOWN1 UP2 RIGHT3 LEFT4 ENTER5 MENU6; physical panel unverified",
+    "frame_binding": "overlay frames must match the presented buffer and fingerprint; plain frames keep the baseline rule",
+    "resources": "menu_resources.py rejects traversal, aliases, duplicates, symlinks, encryption, size/hash mismatch, and never overwrites"
+  },
+  "tests": {
+    "native_and_protocol": 11,
+    "title_bank": 3,
+    "resource_import": "8 guards + 1 real-bundle case (skips without A7C2_RESOURCE_ZIP)",
+    "project_pytest_subset": "34 passed, 1 skipped"
+  },
+  "not_implemented": [
+    "camera shooting main screen, live view, photo/video",
+    "sensor/lens/autofocus models",
+    "all original settings write-back",
+    "physical panel scan and press/release",
+    "real camera or physical SD deployment"
+  ],
+  "release_bundle": {
+    "path": "release/zve10-qemu-linux-x86_64-v1.tar.gz",
+    "platform": "Linux x86_64",
+    "default_mode": "original",
+    "a7c2_optional": true,
+    "contains": [
+      "source",
+      "compiled QEMU + verified library closure",
+      "kernel images",
+      "prepared ui.cpio",
+      "original libObj/viewUnified2/CautionConfig",
+      "ARMv7 toolchain",
+      "official ZV-E10 2.03 update package",
+      "A7C2 minimal resource ZIP"
+    ],
+    "distributed_via": "local only; release/ is gitignored",
+    "bytes": 754531730,
+    "sha256": "55448743710fcfdb820487e0f6a4585f6973d86373883bb7243e0f47e31357bf",
+    "payload_files": 5753,
+    "verified_from_extracted_copy": {
+      "payload_mismatched": 0,
+      "firmware_sha_ok": true,
+      "original_mode": {
+        "ok": true,
+        "frames": 14,
+        "native_inputs": 4,
+        "qmp_quit": true,
+        "qemu_rc": 0
+      },
+      "a7c2_mode": {
+        "ok": true,
+        "frames": 21,
+        "native_inputs": 8,
+        "entry_title_verified": true,
+        "qmp_quit": true,
+        "qemu_rc": 0
+      },
+      "note": "single deterministic entry label (AP label suppressed for that row), original rows unchanged"
+    }
+  },
+  "shoot_page_probe": {
+    "status": "shoot-page-visible-by-virtual-frame; OSD still absent",
+    "run": "output/shoot-observe-v1",
+    "findings": [
+      "shoot page uses view slot 0xa0, Main is shared ViewBase::Main",
+      "only 3 framebuffer draws, 0 glyph draws, uniform frame",
+      "UI thread waits in osal_wai_sem_tmo (sem 0x170604c) for imaging data",
+      "synthesized function events -> trigger 0x11012001/0x11012007, 0 AP consumption",
+      "raw input-table ids reach Main but change neither view nor pixels",
+      "transformByTriggerTable over 235 candidate ids always returns 0x11012005 (guard denies; no table transform for this view)",
+      "Injecting via sub_11fbbc blocks in snd_InfraInputEvent_to_InputServant on the UI thread (probe timeouts)",
+      "sub_11fbbc blocks the same way from the transport control thread, so it is not a thread-affinity problem",
+      "InputService::createEvent ignores this, but InputService::pushFilterEvent needs a real InputService instance (this+0x10 lock)",
+      "the instance comes from a libObj global used by sub_11fbbc; no stable way to read it yet",
+      "InputService instance found at libObj global object_base+0x13dba70",
+      "createEvent+pushFilterEvent injection enters the original dispatch (NE_BASEMAIN 0 -> 53) but pushFilterEvent never returns",
+      "therefore the shoot page blocks before input dispatch completes, i.e. keys cannot be validated without live-view data"
+    ],
+    "next": "either add the minimal functional live-view source (authorized virtual-functional-camera-v1 profile) or accept that keys/navigation on the shoot page stay unverifiable",
+    "live_view_source": "not implemented (user chose keys/navigation only)",
+    "a7m4_method": {
+      "reference": "a7m4-qemu report 2026-11-04-skip-first-setup.md",
+      "approach": "seed Backup 02cf0014=0, 01070140=0, 02cf1701=1 + udate, let the AP boot into the shooting UI naturally",
+      "zve10_status": "mirror id 01070140 present 6x in libObj; primary ids not found as literals or movt immediates yet",
+      "next": "locate ZV-E10 Backup read/write call sites for first-setup ids, seed via original API, verify screen sequence and OSD pixels"
+    },
+    "verified": {
+      "ok": true,
+      "qemu_rc": 0,
+      "frames": 6,
+      "view_state": [
+        1
+      ],
+      "color_samples": [
+        1
+      ],
+      "note": "shoot mode completes cleanly; the page is a single uniform colour, no OSD"
+    },
+    "ruled_out": [
+      "module additions (input/indctr/keyinject/udate/mcmn_drv/codec_drv) do not initialise fonts",
+      "im.elf emits almost only ulogio log traffic, so it is not waiting on a model reply it never gets",
+      "opening views directly through root vtable+0x90 crashes im.elf (section permission fault at 0x80bff6f6)"
+    ],
+    "drawing_process": "im.elf in BOTH modes (bootin only launches it); menu appears because our harness opens view 0x11 explicitly",
+    "sem_waits": {
+      "0x9401c3": 46,
+      "0x83e03f": 23,
+      "0x7a008d": 23,
+      "0x830451": 18,
+      "0xcfe012": 11,
+      "0x170604c": 9,
+      "0x170604d": 6
+    },
+    "sem_caller_resolution": "dladdr resolves only im.elf+0x380d/0x3865 (its wait wrapper), so the waiting subsystem is not identified by this route",
+    "assessment": "docs/shoot-model-assessment.md",
+    "recommended_route": "A: locate ZV-E10 first-setup Backup ids (A7M4 analogue) before any functional camera model",
+    "rcv_evidence": {
+      "run": "output/shoot-rcv-v1",
+      "receives": 104,
+      "rc0": 93,
+      "rc_minus1022": 11,
+      "top": "ulogio 50, dataflowInfraFramework 14, libObj 6/6/4/4/2, rsrcHotshoe 6, gps 2, jiritsu 1",
+      "conclusion": "im.elf is idle but alive; it lacks video frames, and the shooting OSD is composited with the frame, so nothing is visible"
+    },
+    "virtual_frame": {
+      "run": "output/shoot-frame-v4",
+      "ok": true,
+      "qemu_rc": 0,
+      "color_samples": 8,
+      "evidence": "evidence/virtual-frame-test-pattern.png",
+      "mechanism": "underlay composite in the linear present target, only pixels still at background colour; ownership table keeps later frames refreshable",
+      "limits": "AP still draws no OSD (glyph_images=0); frame is static because the AP presents only on content change"
+    },
+    "dff_messages": {
+      "run": "output/shoot-rcv-v2",
+      "count": 14,
+      "w0": "frame ticks, mostly +32 (≈31.25 fps)",
+      "w1": [
+        0,
+        243596060
+      ],
+      "w2": 182856064,
+      "w3": 182856072,
+      "conclusion": "dataflow delivers frame ticks but no pixel buffers; missing image buffer, not ticks"
+    }
+  },
+  "regression_after_probes": {
+    "original": {
+      "run": "output/reg-original2",
+      "ok": true
+    },
+    "a7c2": {
+      "run": "output/reg-a7c2",
+      "ok": true
+    }
+  },
+  "regression_after_shoot_probe": {
+    "original": {
+      "run": "output/reg-original3",
+      "ok": true,
+      "frames": 14,
+      "native_inputs": 4
+    },
+    "a7c2": {
+      "run": "output/reg-a7c2b",
+      "ok": true,
+      "frames": 22,
+      "native_inputs": 8,
+      "entry_title_verified": true
+    },
+    "boundary_tests": "19 passed, 1 skipped, 11 subtests",
+    "prepare_tests": "15 passed, 10 subtests",
+    "original_after_open_probe": {
+      "run": "output/reg-original4",
+      "ok": true,
+      "frames": 14
+    }
+  }
+}

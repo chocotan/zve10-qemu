@@ -1,0 +1,13 @@
+{
+  "source": "private output/native-v10/capture-005.png",
+  "source_png_sha256": "a5aee48bb68ef1009288ccc8607b6d8a1c46dec819a8eaefd3c1e67e2d45ab6d",
+  "crop": [
+    24,
+    332,
+    200,
+    368
+  ],
+  "threshold": "all RGB channels >170",
+  "mask_pixels": 1024,
+  "purpose": "verification only; never rendered into guest"
+}
