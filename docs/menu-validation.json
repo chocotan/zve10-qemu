@@ -195,6 +195,11 @@
         "0x432708"
       ],
       "note": "0x77c5f0 sits next to the existing display submit code (0x777935 present caller)"
+    },
+    "send_api": {
+      "DataflowInfraSender::SendASync GOT": "0x13d7d64",
+      "DataflowInfraCh::infraGetPin GOT": "0x13d7ce4",
+      "DataflowInfra_relocations_in_libObj": 148
     }
   },
   "regression_after_probes": {

@@ -108,6 +108,16 @@ wlanResource_init, WlanAdjust_Init, KikiLogGenerator_init
 
 注意 `0x77c5f0` 这类命中需先排除字面量池：该地址附近反汇编是属性读取函数（`0x77c5b4` push、`0x77c5f4` push），常量只是落在池里，不能据此认定是提交函数。
 
+## 2h. 真实的发送 API（动态符号）
+
+`send_sync/send_async` 是旧研究里的伪符号，二进制中无对应常量；应改用真实动态符号：
+
+- `DataflowInfraSender::SendASync(uint, DataflowInfraMsg*)` — GOT `0x13d7d64`
+- `DataflowInfraPin::Send`
+- `DataflowInfraCh::infraGetPin` — GOT `0x13d7ce4`
+
+libObj.so 中与 DataflowInfra 相关的重定位共 **148 条**，说明它是数据流的完整实现侧；要注入缓冲，应从 `SendASync` 的真实调用点（而非字面量常量）反查谁组帧消息。
+
 ## 3. 建议顺序
 
 1. （建议降级）先做路线 A 的定点调查：从 `Backup_write`(162 处) 中筛出与"开机完成/教学"相关的写入函数，确定 ZV-E10 的首设编号；再在 guest 内经原 API 种子 + 读回。
