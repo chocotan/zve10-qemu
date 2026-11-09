@@ -77,9 +77,9 @@
       "A7C2 minimal resource ZIP"
     ],
     "distributed_via": "local only; release/ is gitignored",
-    "bytes": 754531730,
-    "sha256": "55448743710fcfdb820487e0f6a4585f6973d86373883bb7243e0f47e31357bf",
-    "payload_files": 5753,
+    "bytes": 754571357,
+    "sha256": "8c1e769e04342da244cc7789dd7d318cd5817d46ea8611f02a78884e52b0766a",
+    "payload_files": 5755,
     "verified_from_extracted_copy": {
       "payload_mismatched": 0,
       "firmware_sha_ok": true,
@@ -218,5 +218,10 @@
       "ok": true,
       "frames": 14
     }
+  },
+  "local_git": {
+    "commit": "0457dd7",
+    "pushed": false,
+    "note": "product repo committed locally only"
   }
 }
