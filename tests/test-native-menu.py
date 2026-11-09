@@ -234,6 +234,22 @@ int main(void){
         finally:
             run.time.monotonic = original
 
+    def test_settle_waits_for_three_identical_frames_after_a_late_draw(self):
+        from menu_run import settle
+        class Guest:
+            def __init__(self, hashes):
+                self.hashes = iter(hashes)
+                self.calls = 0
+            def capture(self):
+                self.calls += 1
+                return {'raw_sha256': next(self.hashes)}, object()
+        guest = Guest(['a', 'a', 'b', 'b', 'b'])
+        frame, _ = settle(guest)
+        self.assertEqual(frame['raw_sha256'], 'b')
+        self.assertEqual(guest.calls, 5)
+        with self.assertRaises(RuntimeError):
+            settle(Guest(['a', 'a', 'b', 'b']), limit=3)
+
     def test_changed_source_seam_is_refused(self):
         from menu_build import replace_once
         for source in ('absent marker', 'seam seam'):

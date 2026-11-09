@@ -291,11 +291,13 @@ def exercise(guest):
 
 
 def settle(guest, limit=8):
-    """Capture until two consecutive completed frames are identical (fonts settle)."""
+    """Require three identical completed frames; late font draws can follow one equal pair."""
     previous, image = guest.capture()
+    identical = 1
     for _ in range(limit):
         current, image = guest.capture()
-        if current['raw_sha256'] == previous['raw_sha256']:
+        identical = identical + 1 if current['raw_sha256'] == previous['raw_sha256'] else 1
+        if identical >= 3:
             return current, image
         previous = current
     raise RuntimeError('Original menu frames kept changing')
