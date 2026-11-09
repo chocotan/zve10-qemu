@@ -102,6 +102,12 @@ wlanResource_init, WlanAdjust_Init, KikiLogGenerator_init
 
 其中 `0x77c5f0` 紧邻既有显示/提交代码（`0x777935` present caller 一带），很可能是"提交一帧到显示"的分支，是移植的第一个调查点。
 
+## 2g. 全库检索结果（`work/ui.cpio` 解出的 212 个库）
+
+`0x10000102` 只出现在 `libObj.so`(19) 与 `CautionConfig.so`(5)（其余库为偶然字节）。`im.elf` 为 0。因此 ZV-E10 的 AV-cam 帧提交入口就在 **libObj.so**，与 A7C2 的 appFw 所在位置不同，但协议同源。
+
+注意 `0x77c5f0` 这类命中需先排除字面量池：该地址附近反汇编是属性读取函数（`0x77c5b4` push、`0x77c5f4` push），常量只是落在池里，不能据此认定是提交函数。
+
 ## 3. 建议顺序
 
 1. （建议降级）先做路线 A 的定点调查：从 `Backup_write`(162 处) 中筛出与"开机完成/教学"相关的写入函数，确定 ZV-E10 的首设编号；再在 guest 内经原 API 种子 + 读回。
