@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'zve10-qemu-linux-x86_64-v1'
+NAME = 'zve10-qemu-linux-x86_64-v2'
 FIRMWARE_SHA = '547948c49d28c31de04726113d94cd2200817a0af8e0d7d90abf2b321f19fca8'
 
 
@@ -74,18 +74,24 @@ def package(output):
                     'default_mode': 'original', 'a7c2_mode': 'explicitly optional',
                     'official_firmware_sha256': FIRMWARE_SHA,
                     'host_requirements': ['Python 3.11+', 'Pillow', 'pyelftools', 'capstone', 'Tk/X11 for a window'],
+                    'shooting_page_display_verified': True,
+                    'shooting_to_menu_verified': False,
                     'shooting_view_capture_video_verified': False, 'files': records}
         (stage / 'BUNDLE-MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n')
         (stage / 'START-HERE.txt').write_text(
             'Linux x86_64 ready-to-run ZV-E10 menu bundle\n\n'
             './start.sh           Original Sony menu (default; no A7C2 assets needed)\n'
             './start-a7c2.sh      Optional A7C2 resource menu\n'
-            './start.sh --headless    Bounded console verification\n\n'
+            './start.sh --headless    Bounded console verification\n'
+            './start.sh --start-page shoot --shoot-view --capture-table-model\n'
+            '                       Original shooting-page display (experimental)\n\n'
             'Includes the official ZV-E10 2.03 update package, compiled QEMU and\n'
             'its shared libraries, prepared guest files, kernel and ARM toolchain.\n'
             'Python 3.11+, Pillow, pyelftools, capstone and optional Tk/X11 are\n'
             'ordinary host dependencies; start.sh reports anything missing.\n'
-            'Camera shooting main view, live view, photo and video are NOT ready.\n'
+            'The original shooting page can draw its HUD. Shooting-page MENU\n'
+            'transition, live view, photo and video are NOT ready. Startup remains\n'
+            'nondeterministic; failed runs are retained in their output directory.\n'
             'No camera or physical SD is connected. No firmware is flashed.\n'
             'This local bundle contains original firmware and is not part of Git.\n'
             'See README.md and docs/menu-modes.md for scope and validation.\n')

@@ -97,19 +97,21 @@ xvfb-run -a -s '-screen 0 800x640x24 -nolisten tcp' \
 
 ## 一键运行包（本机交付）
 
-`release/zve10-qemu-linux-x86_64-v1.tar.gz` 由 `scripts/package-ready.py` 从本目录已验文件生成，包含：源码、编译好的 QEMU 与逐项核验的动态库闭包、内核与已准备启动 CPIO、原三个业务 ELF、ARMv7 工具链、**官方 ZV-E10 2.03 更新包**，以及可选的 A7C2 最小资源 ZIP。
+`release/zve10-qemu-linux-x86_64-v2.tar.gz` 由 `scripts/package-ready.py` 从本目录已验文件生成，包含：源码、编译好的 QEMU 与逐项核验的动态库闭包、内核与已准备启动 CPIO、原三个业务 ELF、ARMv7 工具链、**官方 ZV-E10 2.03 更新包**，以及可选的 A7C2 最小资源 ZIP。
 
 ```bash
-tar -xzf zve10-qemu-linux-x86_64-v1.tar.gz
-cd zve10-qemu-linux-x86_64-v1
+tar -xzf zve10-qemu-linux-x86_64-v2.tar.gz
+cd zve10-qemu-linux-x86_64-v2
 ./start.sh              # 原版菜单（默认）
 ./start-a7c2.sh         # 可选 A7C2 菜单
 ./start.sh --headless   # 无桌面时的可验证运行
+# 实验：原拍摄主界面
+./start.sh --start-page shoot --shoot-view --capture-table-model
 ```
 
 包内 `BUNDLE-MANIFEST.json` 记录每个文件的尺寸与 SHA-256，`start.sh` 会先检查 Linux x86_64、Python 3.11+ 与 Pillow/pyelftools/capstone（窗口另需 Tk）。主机仍需普通 Python 依赖，包不自带 Python。
 
-包很大（约 720 MiB，解压约 1.3 GiB），含原厂固件，只作本机研究交付，不进入 Git；`release/` 已被忽略。既有 v1 一键包仍是菜单版，未包含本轮拍摄页改动；取景/拍照仍未实现。
+包很大（约 720 MiB，解压约 1.3 GiB），含原厂固件，只作本机研究交付，不进入 Git；`release/` 已被忽略。v2 包含本轮拍摄页源码与文档；拍摄页MENU切换、取景和拍照仍未通过。既有 v1 包及其原摘要保留为历史版本。
 
 Linux x86_64、Python 3.11+、host GCC、Pillow、pyelftools、capstone；窗口模式另需Tk/X11，测试使用pytest。ZV-E10固件、Sony GPL Linux、QEMU11.1.2及Bootlin ARMv7工具链的来源和编译步骤见 [docs/setup.md](docs/setup.md)。
 

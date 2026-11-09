@@ -62,14 +62,14 @@ python3 tests/test-menu-resources.py
 
 ## 当前未完成
 
-可用拍摄主页面、实时取景、传感器/镜头/AF、拍照/录像和全部原设置后端均未完成。没有物理相机/SD测试，没有真机部署。所有功能检查仅在本机隔离QEMU进行，`query-block`必须为空。
+拍摄页MENU切换、完整拍摄HUD、实时取景、传感器/镜头/AF、拍照/录像和全部原设置后端均未完成。没有物理相机/SD测试，没有真机部署。所有功能检查仅在本机隔离QEMU进行，`query-block`必须为空。
 
 一键包中的官方固件、已提取原件、内核/工具链/动态库不进入Git；源码可公开，原厂资源包只按本机交付授权提供。随包QEMU库由其manifest逐项核验，专属loader只用于QEMU，不全局改变 `LD_LIBRARY_PATH`。
 
 ## 本机一键包
 
 ```bash
-python3 scripts/package-ready.py --out release/zve10-qemu-linux-x86_64-v1.tar.gz
+python3 scripts/package-ready.py --out release/zve10-qemu-linux-x86_64-v2.tar.gz
 ```
 
 构建器只从本目录已验证的运行文件与官方更新包取材，逐文件读回摘要，在私有 staging 目录生成 tar.gz，并写出同名 `.sha256` 与 `.json` 收据。`release/`、`work/`、`incoming/`、`output/` 均被 Git 忽略。包内 `start.sh` 为原版默认，`start-a7c2.sh` 为可选菜单；两者都先检查主机架构、Python 版本和依赖。
